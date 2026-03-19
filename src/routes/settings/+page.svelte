@@ -3,10 +3,8 @@
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
-  let appWindow: ReturnType<typeof getCurrentWebviewWindow> | null = null;
-
   function closeWindow() {
-    appWindow?.hide();
+    getCurrentWebviewWindow().hide();
   }
 
   interface PluginProvider {
@@ -61,6 +59,7 @@
   let registryLoading = false;
   let registryError = '';
   let installingId: string | null = null;
+  let installErrors: Record<string, string> = {};
 
   function detectPlatform(): string {
     const ua = navigator.userAgent.toLowerCase();
@@ -84,16 +83,17 @@
   async function installPlugin(plugin: RegistryPlugin) {
     const platform = detectPlatform();
     if (!plugin.platforms[platform]) {
-      showMessage(`No binary available for ${platform}`, 'error');
+      installErrors = { ...installErrors, [plugin.id]: `No binary available for platform '${platform}'` };
       return;
     }
     installingId = plugin.id;
+    installErrors = { ...installErrors, [plugin.id]: '' };
     try {
       await invoke('install_registry_plugin', { plugin, platformKey: platform });
       await loadSettings();
       showMessage(`${plugin.name} installed`, 'success');
     } catch (e) {
-      showMessage(`Install failed: ${e}`, 'error');
+      installErrors = { ...installErrors, [plugin.id]: `${e}` };
     } finally {
       installingId = null;
     }
@@ -118,8 +118,8 @@
   }
 
   onMount(async () => {
-    appWindow = getCurrentWebviewWindow();
     await loadSettings();
+    loadRegistry();
   });
 
   async function loadSettings() {
@@ -260,7 +260,7 @@
   <div class="container">
     <!-- Header -->
     <div class="header compact">
-      <div class="header-content flex justify-between items-center" data-tauri-drag-region>
+      <div class="header-content flex justify-between items-center">
         <div class="header-main" data-tauri-drag-region>
           <h1 class="h2 text-glow" data-tauri-drag-region>⚙️ clipygo Settings</h1>
           <p class="subtitle" data-tauri-drag-region>Configure your application</p>
@@ -456,6 +456,9 @@
                       {/if}
                     </div>
                   </div>
+                  {#if installErrors[rp.id]}
+                    <p class="install-error">{installErrors[rp.id]}</p>
+                  {/if}
                 {/each}
               </div>
             {/if}
@@ -794,6 +797,13 @@
     grid-template-columns: 1fr auto;
     gap: var(--space-sm);
     margin-bottom: var(--space-md);
+  }
+
+  .install-error {
+    color: #ff5050;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    margin: var(--space-xs) var(--space-md) 0;
   }
 
   .registry-error {
