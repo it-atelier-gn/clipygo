@@ -1,0 +1,307 @@
+# 📋 clipygo
+
+[![Build](https://github.com/it-atelier-gn/clipygo/actions/workflows/build.yml/badge.svg)](https://github.com/it-atelier-gn/clipygo/actions)
+[![Rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org/)
+[![Tauri](https://img.shields.io/badge/tauri-2.x-blue?logo=tauri)](https://tauri.app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/it-atelier-gn/clipygo)
+
+Clipboard monitor that watches for specific content patterns and lets you route them to configured targets — instantly, with a single keypress.
+
+---
+
+## ✨ Features
+
+- 🔍 **Pattern detection** — regex-based clipboard monitoring triggers the popup automatically when a match is found (URLs, GitHub links, IPs, JetBrains Code With Me links, email addresses, and more)
+- ⌨️ **Global hotkey** — summon the popup at any time with a configurable shortcut (default `Ctrl+F10`)
+- 🎯 **Target routing** — send clipboard content to any configured target with one click or `Enter`
+- 🔌 **Subprocess plugin system** — extend clipygo with any executable that speaks the JSON protocol over stdin/stdout (Node.js, Python, Deno, Rust, Go — anything)
+- 🗣️ **Microsoft Teams** — built-in provider using Graph API with delegated OAuth (coming)
+- 💾 **Persistent plugins** — plugin processes stay alive, maintaining their own state and connections
+- 🚀 **System tray** — runs silently in the background, always ready
+- 🔄 **Autostart** — optionally launch on system boot
+- 🪟 **Frameless UI** — compact, keyboard-driven popup with a cyberpunk aesthetic
+
+---
+
+## 🖼️ How It Works
+
+```mermaid
+flowchart TD
+    CB[📋 Clipboard] -->|text copied| MON[Clipboard Monitor]
+    MON -->|regex match| POPUP[clipygo Popup]
+    HK[⌨️ Global Hotkey] -->|Ctrl+F10| POPUP
+
+    POPUP --> CONTENT[Clipboard Content]
+    POPUP --> TARGETS[Target List]
+
+    TARGETS --> PA[🎯 Target A]
+    TARGETS --> PB[🎯 Target B]
+    TARGETS --> PC[🎯 Target C]
+
+    PA & PB & PC -->|user selects| SEND[Send Request]
+
+    SEND -->|JSON over stdin| PLUGIN[Plugin Process\nnode / python / rust / go]
+
+    PLUGIN -->|JSON over stdout| RESULT[✅ Success / ❌ Error]
+
+    PLUGIN -->|HTTP| EXT[Teams / Slack / GitHub / ...]
+
+    style POPUP fill:#1a1a2e,color:#00d4ff,stroke:#00d4ff
+    style PLUGIN fill:#1a1a2e,color:#ff6b35,stroke:#ff6b35
+    style EXT fill:#1a1a2e,color:#00ff88,stroke:#00ff88
+```
+
+1. clipygo monitors your clipboard in the background
+2. When text matches any configured regex — or you press the hotkey — the popup appears
+3. The popup shows your clipboard content and all available targets from all enabled plugins
+4. Pick a target with mouse or keyboard — content is sent, popup hides
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- [Rust](https://rustup.rs/) 1.80+
+- [Deno](https://deno.com/) 2+
+- [Tauri CLI](https://tauri.app/start/): `cargo install tauri-cli`
+- Windows 10/11 (primary target; macOS and Linux experimental)
+
+### Build & Run
+
+```sh
+# Clone the repo
+git clone https://github.com/it-atelier-gn/clipygo.git
+cd clipygo
+
+# Run in development mode
+cargo tauri dev
+
+# Build a release binary
+cargo tauri build
+```
+
+### Build the demo plugin
+
+```sh
+cd plugins/demo
+cargo build --release
+# Output: plugins/demo/target/release/clipygo-plugin-demo.exe
+```
+
+---
+
+## ⚙️ Configuration
+
+Settings are persisted to `%APPDATA%\clipygo\config.json` and managed through the in-app settings window (tray icon → Settings).
+
+| Setting | Default | Description |
+|---|---|---|
+| `autostart` | `true` | Launch clipygo on system boot |
+| `global_shortcut` | `Ctrl+F10` | Hotkey to show the popup |
+| `regex_list` | see below | Patterns that trigger the popup automatically |
+
+### Default regex patterns
+
+```text
+https://code-with-me\.jetbrains\.com/[a-zA-Z0-9\-_]+   # JetBrains Code With Me links
+https://github\.com/[a-zA-Z0-9\-_]+/[a-zA-Z0-9\-_]+    # GitHub repository URLs
+https?://[^\s]+                                        # Any HTTP/HTTPS URL
+\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b    # Email addresses
+\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b                      # IPv4 addresses
+```
+
+Add your own patterns in the settings window under **Pattern Recognition**.
+
+---
+
+## 🔌 Plugin System
+
+clipygo uses a **persistent subprocess model** for target providers. A plugin is any executable that reads JSON requests from stdin and writes JSON responses to stdout — one JSON object per line. The process stays alive for the lifetime of the session.
+
+### Adding a plugin
+
+Open Settings → **Plugins** → enter a name and the command to run:
+
+```
+Name:    My Plugin
+Command: node C:\plugins\my-plugin\index.js
+```
+
+The command can be any executable or interpreter — compiled binaries, Node.js scripts, Python scripts, Deno modules, etc.
+
+### Protocol
+
+Every request is a single line of JSON. Every response is a single line of JSON.
+
+#### `get_info` — called on startup to verify the plugin
+
+```json
+{"command":"get_info"}
+```
+```json
+{"name":"My Plugin","version":"1.0.0","description":"...","author":"..."}
+```
+
+#### `get_targets` — returns all available targets for this plugin
+
+```json
+{"command":"get_targets"}
+```
+```json
+{
+  "targets": [
+    {
+      "id": "unique-target-id",
+      "provider": "My Plugin",
+      "formats": ["text"],
+      "title": "Target Display Name",
+      "description": "Short description",
+      "image": "<base64 PNG>"
+    }
+  ]
+}
+```
+
+#### `send` — send clipboard content to a target
+
+```json
+{"command":"send","target_id":"unique-target-id","content":"clipboard text here","format":"text"}
+```
+```json
+{"success":true}
+```
+```json
+{"success":false,"error":"Something went wrong"}
+```
+
+### Error handling
+
+clipygo auto-restarts a crashed plugin on the next request. After **3 consecutive failures** the plugin is marked as errored and paused — remove and re-add it in settings to reset.
+
+### Demo plugin
+
+A working demo plugin is included at `plugins/demo/`. Build it with:
+
+```sh
+cd plugins/demo && cargo build --release
+```
+
+Then add it in Settings → Plugins:
+
+```
+Name:    Demo
+Command: C:\path\to\clipygo\plugins\demo\target\release\clipygo-plugin-demo.exe
+```
+
+### Writing a plugin in Node.js
+
+```js
+const readline = require('readline');
+
+const rl = readline.createInterface({ input: process.stdin });
+
+rl.on('line', (line) => {
+  const req = JSON.parse(line);
+
+  if (req.command === 'get_info') {
+    respond({ name: 'My Plugin', version: '1.0.0', description: '...', author: '...' });
+
+  } else if (req.command === 'get_targets') {
+    respond({
+      targets: [{
+        id: 'my-target',
+        provider: 'My Plugin',
+        formats: ['text'],
+        title: 'My Target',
+        description: 'Does something useful',
+        image: ''
+      }]
+    });
+
+  } else if (req.command === 'send') {
+    // do something with req.target_id, req.content, req.format
+    respond({ success: true });
+  }
+});
+
+function respond(obj) {
+  process.stdout.write(JSON.stringify(obj) + '\n');
+}
+```
+
+### Writing a plugin in Python
+
+```python
+import sys
+import json
+
+for line in sys.stdin:
+    req = json.loads(line.strip())
+
+    if req['command'] == 'get_info':
+        print(json.dumps({'name': 'My Plugin', 'version': '1.0.0', 'description': '...', 'author': '...'}), flush=True)
+
+    elif req['command'] == 'get_targets':
+        print(json.dumps({'targets': [{'id': 'my-target', 'provider': 'My Plugin', 'formats': ['text'], 'title': 'My Target', 'description': '...', 'image': ''}]}), flush=True)
+
+    elif req['command'] == 'send':
+        # do something with req['target_id'], req['content'], req['format']
+        print(json.dumps({'success': True}), flush=True)
+```
+
+---
+
+## 🏗️ Architecture
+
+```
+clipygo/
+├── src/                        # SvelteKit frontend
+│   ├── routes/
+│   │   ├── main/               # Popup window (clipboard content + target list)
+│   │   └── settings/           # Settings window
+│   └── app.css                 # Global styles
+├── src-tauri/                  # Tauri / Rust backend
+│   └── src/
+│       ├── lib.rs              # App setup, clipboard monitor, global shortcut
+│       ├── targets.rs          # TargetProvider trait + coordinator
+│       ├── settings.rs         # Settings model + persistence
+│       ├── trayicon.rs         # System tray setup
+│       └── target_providers/
+│           └── subprocess.rs   # Persistent subprocess plugin runner
+└── plugins/
+    └── demo/                   # Demo subprocess plugin (Rust binary)
+```
+
+### Key design decisions
+
+- 🔄 **Persistent subprocess plugins** — processes stay alive, maintaining their own connections, tokens, and state; no per-request startup cost
+- 🔒 **Snapshot pattern** — `TargetProviderCoordinator::snapshot()` extracts providers before any `.await`, avoiding `MutexGuard` held across async boundaries
+- 💾 **Settings via tauri-plugin-store** — JSON persistence with reactive reload; settings changes trigger live coordinator reload without restart
+- 🔑 **OS keychain ready** — `tmuntaner-keyring` is available for providers that need to store secrets (e.g. OAuth tokens)
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] **Microsoft Teams built-in provider** — Graph API with delegated OAuth + PKCE, OS keychain token storage, dynamic chat/channel target list
+- [ ] **Plugin error state UI** — show plugin error state and reset button in settings
+- [ ] **More default patterns** — Jira ticket IDs, GitLab URLs, Azure DevOps links
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome. For substantial changes, open an issue first to discuss the approach.
+
+```sh
+# Run checks before submitting
+cd src-tauri && cargo check && cargo clippy
+```
+
+---
+
+## 📄 License
+
+MIT © 2026 Georg Nelles

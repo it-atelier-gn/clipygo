@@ -1,0 +1,24 @@
+{
+  "identifier": "desktop-capability",
+  "platforms": [
+    "macOS",
+    "windows",
+    "linux"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "global-shortcut:default",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "autostart:default",
+    "clipboard:allow-start-monitor", 
+    "clipboard:monitor-all",
+    "clipboard:allow-has-files", 
+    "clipboard:read-all"
+  ]
+}
