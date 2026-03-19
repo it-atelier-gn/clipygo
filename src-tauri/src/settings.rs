@@ -30,12 +30,7 @@ impl Default for TargetProviderSettings {
     fn default() -> Self {
         Self {
             msteams: MsTeamsSettings::default(),
-            plugins: vec![PluginProvider {
-                id: "demo".to_string(),
-                name: "Demo Plugin".to_string(),
-                command: "clipygo-plugin-demo".to_string(),
-                enabled: true,
-            }],
+            plugins: vec![],
         }
     }
 }
@@ -381,12 +376,25 @@ pub async fn install_registry_plugin(
     let dest: PathBuf = install_dir.join(&filename);
 
     // Download
-    let bytes = reqwest::get(&platform.url)
+    println!("[install] plugin='{}' platform='{}' url='{}'", plugin.id, platform_key, platform.url);
+    println!("[install] dest='{}'", dest.display());
+
+    let response = reqwest::get(&platform.url)
         .await
-        .map_err(|e| format!("Download failed: {}", e))?
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    println!("[install] HTTP {}", response.status());
+
+    if !response.status().is_success() {
+        return Err(format!("Download failed: HTTP {} — URL: {}", response.status(), platform.url));
+    }
+
+    let bytes = response
         .bytes()
         .await
         .map_err(|e| format!("Failed to read download: {}", e))?;
+
+    println!("[install] downloaded {} bytes", bytes.len());
 
     // Verify SHA256 if provided
     if !platform.sha256.is_empty() {
