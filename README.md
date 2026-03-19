@@ -12,12 +12,12 @@ Clipboard monitor that watches for specific content patterns and lets you route 
 
 ## ✨ Features
 
-- 🔍 **Pattern detection** — regex-based clipboard monitoring triggers the popup automatically when a match is found (URLs, GitHub links, IPs, JetBrains Code With Me links, email addresses, and more)
+- 🔍 **Pattern detection** — regex-based clipboard monitoring triggers the popup automatically when a match is found (meeting links, JetBrains Code With Me, and more)
 - ⌨️ **Global hotkey** — summon the popup at any time with a configurable shortcut (default `Ctrl+F10`)
 - 🎯 **Target routing** — send clipboard content to any configured target with one click or `Enter`
-- 🔌 **Subprocess plugin system** — extend clipygo with any executable that speaks the JSON protocol over stdin/stdout (Node.js, Python, Deno, Rust, Go — anything)
-- 🗣️ **Microsoft Teams** — built-in provider using Graph API with delegated OAuth (coming)
+- 🔌 **Subprocess plugin system** — extend clipygo with any executable that speaks the JSON protocol over stdin/stdout (Node.js, Python, Rust, Go — anything)
 - 💾 **Persistent plugins** — plugin processes stay alive, maintaining their own state and connections
+- 📦 **Plugin registry** — browse and install published plugins from the registry with SHA256-verified downloads
 - 🚀 **System tray** — runs silently in the background, always ready
 - 🔄 **Autostart** — optionally launch on system boot
 - 🪟 **Frameless UI** — compact, keyboard-driven popup with a cyberpunk aesthetic
@@ -64,7 +64,7 @@ flowchart TD
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) 1.80+
-- [Deno](https://deno.com/) 2+
+- [Node.js](https://nodejs.org/) 18+ with npm
 - [Tauri CLI](https://tauri.app/start/): `cargo install tauri-cli`
 - Windows 10/11 (primary target; macOS and Linux experimental)
 
@@ -75,19 +75,14 @@ flowchart TD
 git clone https://github.com/it-atelier-gn/clipygo.git
 cd clipygo
 
+# Install frontend dependencies
+npm install
+
 # Run in development mode
 cargo tauri dev
 
 # Build a release binary
 cargo tauri build
-```
-
-### Build the demo plugin
-
-```sh
-cd plugins/demo
-cargo build --release
-# Output: plugins/demo/target/release/clipygo-plugin-demo.exe
 ```
 
 ---
@@ -101,15 +96,15 @@ Settings are persisted to `%APPDATA%\clipygo\config.json` and managed through th
 | `autostart` | `true` | Launch clipygo on system boot |
 | `global_shortcut` | `Ctrl+F10` | Hotkey to show the popup |
 | `regex_list` | see below | Patterns that trigger the popup automatically |
+| `registry_url` | registry.json | URL of the plugin registry |
 
 ### Default regex patterns
 
 ```text
-https://code-with-me\.jetbrains\.com/[a-zA-Z0-9\-_]+   # JetBrains Code With Me links
-https://github\.com/[a-zA-Z0-9\-_]+/[a-zA-Z0-9\-_]+    # GitHub repository URLs
-https?://[^\s]+                                        # Any HTTP/HTTPS URL
-\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b    # Email addresses
-\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b                      # IPv4 addresses
+https://code-with-me\.jetbrains\.com/[a-zA-Z0-9\-_]+   # JetBrains Code With Me
+https://[a-z0-9\-]+\.zoom\.us/j/[0-9]+                  # Zoom meeting links
+https://meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}    # Google Meet
+https://teams\.microsoft\.com/l/meetup-join/[^\s]+       # Microsoft Teams meetings
 ```
 
 Add your own patterns in the settings window under **Pattern Recognition**.
@@ -129,7 +124,7 @@ Name:    My Plugin
 Command: node C:\plugins\my-plugin\index.js
 ```
 
-The command can be any executable or interpreter — compiled binaries, Node.js scripts, Python scripts, Deno modules, etc.
+The command can be any executable or interpreter — compiled binaries, Node.js scripts, Python scripts, etc.
 
 ### Protocol
 
@@ -182,24 +177,12 @@ clipygo auto-restarts a crashed plugin on the next request. After **3 consecutiv
 
 ### Demo plugin
 
-A working demo plugin is included at `plugins/demo/`. Build it with:
-
-```sh
-cd plugins/demo && cargo build --release
-```
-
-Then add it in Settings → Plugins:
-
-```
-Name:    Demo
-Command: C:\path\to\clipygo\plugins\demo\target\release\clipygo-plugin-demo.exe
-```
+[clipygo-plugin-demo](https://github.com/it-atelier-gn/clipygo-plugin-demo) is a minimal reference implementation. Pre-built binaries are available on its releases page, or install it directly from the plugin registry in Settings.
 
 ### Writing a plugin in Node.js
 
 ```js
 const readline = require('readline');
-
 const rl = readline.createInterface({ input: process.stdin });
 
 rl.on('line', (line) => {
@@ -234,8 +217,7 @@ function respond(obj) {
 ### Writing a plugin in Python
 
 ```python
-import sys
-import json
+import sys, json
 
 for line in sys.stdin:
     req = json.loads(line.strip())
@@ -253,6 +235,14 @@ for line in sys.stdin:
 
 ---
 
+## 📦 Plugin Registry
+
+The built-in registry browser (Settings → Plugin Registry) lets you browse and install plugins with one click. The default registry is hosted at [it-atelier-gn/clipygo-plugins](https://github.com/it-atelier-gn/clipygo-plugins).
+
+To publish a plugin to the registry, see the [registry README](https://github.com/it-atelier-gn/clipygo-plugins).
+
+---
+
 ## 🏗️ Architecture
 
 ```
@@ -262,16 +252,14 @@ clipygo/
 │   │   ├── main/               # Popup window (clipboard content + target list)
 │   │   └── settings/           # Settings window
 │   └── app.css                 # Global styles
-├── src-tauri/                  # Tauri / Rust backend
-│   └── src/
-│       ├── lib.rs              # App setup, clipboard monitor, global shortcut
-│       ├── targets.rs          # TargetProvider trait + coordinator
-│       ├── settings.rs         # Settings model + persistence
-│       ├── trayicon.rs         # System tray setup
-│       └── target_providers/
-│           └── subprocess.rs   # Persistent subprocess plugin runner
-└── plugins/
-    └── demo/                   # Demo subprocess plugin (Rust binary)
+└── src-tauri/                  # Tauri / Rust backend
+    └── src/
+        ├── lib.rs              # App setup, clipboard monitor, global shortcut
+        ├── targets.rs          # TargetProvider trait + coordinator
+        ├── settings.rs         # Settings model + persistence
+        ├── trayicon.rs         # System tray setup
+        └── target_providers/
+            └── subprocess.rs   # Persistent subprocess plugin runner
 ```
 
 ### Key design decisions
@@ -287,7 +275,6 @@ clipygo/
 
 - [ ] **Microsoft Teams built-in provider** — Graph API with delegated OAuth + PKCE, OS keychain token storage, dynamic chat/channel target list
 - [ ] **Plugin error state UI** — show plugin error state and reset button in settings
-- [ ] **More default patterns** — Jira ticket IDs, GitLab URLs, Azure DevOps links
 
 ---
 
