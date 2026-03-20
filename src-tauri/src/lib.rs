@@ -1,11 +1,11 @@
 mod settings;
-mod targets;
 mod target_providers;
+mod targets;
 mod trayicon;
 
 use std::str::FromStr;
-use std::sync::Mutex;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use regex::Regex;
 
@@ -67,23 +67,23 @@ pub fn run() {
                 });
             }
 
-            start_clipboard_monitor(&app.handle());
+            start_clipboard_monitor(app.handle());
 
             let settings_coordinator = SettingsCoordinator::new(app)?;
             let initial_settings = settings_coordinator.get_settings().clone();
-            let target_coordinator = Arc::new(Mutex::new(
-                TargetProviderCoordinator::new(initial_settings.clone())
-            ));
+            let target_coordinator = Arc::new(Mutex::new(TargetProviderCoordinator::new(
+                initial_settings.clone(),
+            )));
             app.manage(target_coordinator.clone());
 
             // Shared patterns — updated on settings change, read by the single clipboard listener
             let shared_patterns: Arc<Mutex<Vec<Regex>>> =
                 Arc::new(Mutex::new(compile_patterns(&initial_settings.regex_list)));
 
-            setup_shortcut(&app.handle(), &initial_settings);
+            setup_shortcut(app.handle(), &initial_settings);
 
             // Register the clipboard listener exactly once
-            start_clipboard_pattern_monitor(&app.handle(), shared_patterns.clone());
+            start_clipboard_pattern_monitor(app.handle(), shared_patterns.clone());
 
             // On settings change: update shortcut, patterns, and provider coordinator
             let app_handle_listener = app.handle().clone();
@@ -111,25 +111,32 @@ pub fn run() {
 }
 
 pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
-    let shortcut = match tauri_plugin_global_shortcut::Shortcut::from_str(&settings.global_shortcut) {
+    let shortcut = match tauri_plugin_global_shortcut::Shortcut::from_str(&settings.global_shortcut)
+    {
         Ok(shortcut) => shortcut,
         Err(e) => {
-            println!("Unsupported key combination: {}", e);
+            println!("Unsupported key combination: {e}");
             return;
         }
     };
 
     if !app.global_shortcut().is_registered(shortcut) {
         app.global_shortcut().unregister_all().unwrap();
-        println!("Registering shortcut: {:?}", shortcut);
-        app.global_shortcut().on_shortcut(shortcut, on_shortcut).unwrap();
+        println!("Registering shortcut: {shortcut:?}");
+        app.global_shortcut()
+            .on_shortcut(shortcut, on_shortcut)
+            .unwrap();
     } else {
-        println!("Shortcut already registered: {:?}", shortcut);
+        println!("Shortcut already registered: {shortcut:?}");
     }
 }
 
-pub fn on_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_shortcut::Shortcut, _event: tauri_plugin_global_shortcut::ShortcutEvent) {
-    println!("Shortcut pressed: {:?}", shortcut);
+pub fn on_shortcut(
+    app: &AppHandle,
+    shortcut: &tauri_plugin_global_shortcut::Shortcut,
+    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+) {
+    println!("Shortcut pressed: {shortcut:?}");
     if let Some(window) = app.get_webview_window("main") {
         window.show().unwrap();
         window.set_focus().unwrap();
@@ -139,7 +146,7 @@ pub fn on_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_shortcut::Sho
 fn start_clipboard_monitor(app: &AppHandle) {
     let clipboard = app.state::<tauri_plugin_clipboard::Clipboard>();
     if let Err(e) = clipboard.start_monitor(app.clone()) {
-        println!("Failed to start clipboard monitor: {}", e);
+        println!("Failed to start clipboard monitor: {e}");
     } else {
         println!("Clipboard monitor started successfully");
     }
@@ -149,9 +156,11 @@ fn compile_patterns(regex_list: &[String]) -> Vec<Regex> {
     let patterns: Vec<Regex> = regex_list
         .iter()
         .filter_map(|pattern| {
-            Regex::new(pattern).map_err(|e| {
-                println!("Invalid regex pattern '{}': {}", pattern, e);
-            }).ok()
+            Regex::new(pattern)
+                .map_err(|e| {
+                    println!("Invalid regex pattern '{pattern}': {e}");
+                })
+                .ok()
         })
         .collect();
     println!("Compiled {} clipboard patterns", patterns.len());
@@ -162,23 +171,26 @@ fn compile_patterns(regex_list: &[String]) -> Vec<Regex> {
 /// Patterns are read from `shared_patterns` on every event, so updates take effect immediately.
 fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<Vec<Regex>>>) {
     let app_handle = app.clone();
-    app.listen("plugin:clipboard://clipboard-monitor/update", move |_event| {
-        let clipboard = app_handle.state::<tauri_plugin_clipboard::Clipboard>();
-        if let Ok(text) = clipboard.read_text() {
-            let patterns = match shared_patterns.lock() {
-                Ok(p) => p,
-                Err(_) => return,
-            };
-            for pattern in patterns.iter() {
-                if pattern.is_match(&text) {
-                    println!("Clipboard pattern matched — showing window");
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        window.show().unwrap();
-                        window.set_focus().unwrap();
+    app.listen(
+        "plugin:clipboard://clipboard-monitor/update",
+        move |_event| {
+            let clipboard = app_handle.state::<tauri_plugin_clipboard::Clipboard>();
+            if let Ok(text) = clipboard.read_text() {
+                let patterns = match shared_patterns.lock() {
+                    Ok(p) => p,
+                    Err(_) => return,
+                };
+                for pattern in patterns.iter() {
+                    if pattern.is_match(&text) {
+                        println!("Clipboard pattern matched — showing window");
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            window.show().unwrap();
+                            window.set_focus().unwrap();
+                        }
+                        break;
                     }
-                    break;
                 }
             }
-        }
-    });
+        },
+    );
 }

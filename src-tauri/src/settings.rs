@@ -11,7 +11,6 @@ pub struct MsTeamsSettings {
     pub enabled: bool,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginProvider {
     pub id: String,
@@ -20,19 +19,10 @@ pub struct PluginProvider {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TargetProviderSettings {
     pub msteams: MsTeamsSettings,
     pub plugins: Vec<PluginProvider>,
-}
-
-impl Default for TargetProviderSettings {
-    fn default() -> Self {
-        Self {
-            msteams: MsTeamsSettings::default(),
-            plugins: vec![],
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,7 +56,6 @@ impl Default for AppSettings {
                 r"https://meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}".to_string(),
                 // Microsoft Teams meeting links
                 r"https://teams\.microsoft\.com/l/meetup-join/[^\s]+".to_string(),
-
             ],
             target_providers: TargetProviderSettings::default(),
             registry_url: DEFAULT_REGISTRY_URL.to_string(),
@@ -131,7 +120,7 @@ impl SettingsCoordinator {
                     println!("Settings loaded successfully");
                 }
                 Err(e) => {
-                    println!("Failed to deserialize settings, using defaults: {}", e);
+                    println!("Failed to deserialize settings, using defaults: {e}");
                     self.settings = AppSettings::default();
                     self.save_settings()?; // Save default settings
                 }
@@ -156,17 +145,17 @@ impl SettingsCoordinator {
 #[tauri::command]
 pub fn get_settings(app_handle: AppHandle) -> Result<AppSettings, String> {
     let manager = SettingsCoordinator::from_handle(&app_handle)
-        .map_err(|e| format!("Failed to create settings manager: {}", e))?;
+        .map_err(|e| format!("Failed to create settings manager: {e}"))?;
     Ok(manager.get_settings().clone())
 }
 
 #[tauri::command]
 pub fn save_settings(app_handle: AppHandle, settings: AppSettings) -> Result<(), String> {
     let mut manager = SettingsCoordinator::from_handle(&app_handle)
-        .map_err(|e| format!("Failed to create settings manager: {}", e))?;
+        .map_err(|e| format!("Failed to create settings manager: {e}"))?;
     manager
         .update_settings(settings)
-        .map_err(|e| format!("Failed to save settings: {}", e))?;
+        .map_err(|e| format!("Failed to save settings: {e}"))?;
     let _ = app_handle.emit("settings-changed", ());
     Ok(())
 }
@@ -174,10 +163,10 @@ pub fn save_settings(app_handle: AppHandle, settings: AppSettings) -> Result<(),
 #[tauri::command]
 pub fn reset_settings(app_handle: AppHandle) -> Result<AppSettings, String> {
     let mut manager = SettingsCoordinator::from_handle(&app_handle)
-        .map_err(|e| format!("Failed to create settings manager: {}", e))?;
+        .map_err(|e| format!("Failed to create settings manager: {e}"))?;
     manager
         .reset_to_defaults()
-        .map_err(|e| format!("Failed to reset settings: {}", e))?;
+        .map_err(|e| format!("Failed to reset settings: {e}"))?;
     let _ = app_handle.emit("settings-changed", ());
     Ok(manager.get_settings().clone())
 }
@@ -185,19 +174,20 @@ pub fn reset_settings(app_handle: AppHandle) -> Result<AppSettings, String> {
 // Plugin Management Commands
 
 #[tauri::command]
-pub fn add_plugin(
-    app_handle: AppHandle,
-    command: String,
-    name: String,
-) -> Result<String, String> {
+pub fn add_plugin(app_handle: AppHandle, command: String, name: String) -> Result<String, String> {
     use uuid::Uuid;
 
     let mut manager = SettingsCoordinator::from_handle(&app_handle)
-        .map_err(|e| format!("Failed to create settings manager: {}", e))?;
+        .map_err(|e| format!("Failed to create settings manager: {e}"))?;
 
     let mut settings = manager.get_settings().clone();
 
-    if settings.target_providers.plugins.iter().any(|p| p.command == command) {
+    if settings
+        .target_providers
+        .plugins
+        .iter()
+        .any(|p| p.command == command)
+    {
         return Err("Plugin with this command already exists".to_string());
     }
 
@@ -211,7 +201,7 @@ pub fn add_plugin(
 
     manager
         .update_settings(settings)
-        .map_err(|e| format!("Failed to save settings: {}", e))?;
+        .map_err(|e| format!("Failed to save settings: {e}"))?;
 
     let _ = app_handle.emit("settings-changed", ());
     Ok(id)
@@ -220,31 +210,44 @@ pub fn add_plugin(
 #[tauri::command]
 pub fn remove_plugin(app_handle: AppHandle, plugin_id: String) -> Result<(), String> {
     let mut manager = SettingsCoordinator::from_handle(&app_handle)
-        .map_err(|e| format!("Failed to create settings manager: {}", e))?;
+        .map_err(|e| format!("Failed to create settings manager: {e}"))?;
 
     let mut settings = manager.get_settings().clone();
-    settings.target_providers.plugins.retain(|p| p.id != plugin_id);
+    settings
+        .target_providers
+        .plugins
+        .retain(|p| p.id != plugin_id);
 
     manager
         .update_settings(settings)
-        .map_err(|e| format!("Failed to save settings: {}", e))?;
+        .map_err(|e| format!("Failed to save settings: {e}"))?;
     let _ = app_handle.emit("settings-changed", ());
     Ok(())
 }
 
 #[tauri::command]
-pub fn update_plugin(app_handle: AppHandle, plugin_id: String, name: String, command: String) -> Result<(), String> {
+pub fn update_plugin(
+    app_handle: AppHandle,
+    plugin_id: String,
+    name: String,
+    command: String,
+) -> Result<(), String> {
     let mut manager = SettingsCoordinator::from_handle(&app_handle)
-        .map_err(|e| format!("Failed to create settings manager: {}", e))?;
+        .map_err(|e| format!("Failed to create settings manager: {e}"))?;
 
     let mut settings = manager.get_settings().clone();
 
-    if let Some(plugin) = settings.target_providers.plugins.iter_mut().find(|p| p.id == plugin_id) {
+    if let Some(plugin) = settings
+        .target_providers
+        .plugins
+        .iter_mut()
+        .find(|p| p.id == plugin_id)
+    {
         plugin.name = name;
         plugin.command = command;
         manager
             .update_settings(settings)
-            .map_err(|e| format!("Failed to save settings: {}", e))?;
+            .map_err(|e| format!("Failed to save settings: {e}"))?;
         let _ = app_handle.emit("settings-changed", ());
         Ok(())
     } else {
@@ -253,17 +256,26 @@ pub fn update_plugin(app_handle: AppHandle, plugin_id: String, name: String, com
 }
 
 #[tauri::command]
-pub fn toggle_plugin(app_handle: AppHandle, plugin_id: String, enabled: bool) -> Result<(), String> {
+pub fn toggle_plugin(
+    app_handle: AppHandle,
+    plugin_id: String,
+    enabled: bool,
+) -> Result<(), String> {
     let mut manager = SettingsCoordinator::from_handle(&app_handle)
-        .map_err(|e| format!("Failed to create settings manager: {}", e))?;
+        .map_err(|e| format!("Failed to create settings manager: {e}"))?;
 
     let mut settings = manager.get_settings().clone();
 
-    if let Some(plugin) = settings.target_providers.plugins.iter_mut().find(|p| p.id == plugin_id) {
+    if let Some(plugin) = settings
+        .target_providers
+        .plugins
+        .iter_mut()
+        .find(|p| p.id == plugin_id)
+    {
         plugin.enabled = enabled;
         manager
             .update_settings(settings)
-            .map_err(|e| format!("Failed to save settings: {}", e))?;
+            .map_err(|e| format!("Failed to save settings: {e}"))?;
         let _ = app_handle.emit("settings-changed", ());
         Ok(())
     } else {
@@ -296,7 +308,7 @@ pub fn check_plugin_path(command: String) -> bool {
             }
             #[cfg(windows)]
             {
-                let with_exe = Path::new(dir).join(format!("{}.exe", program));
+                let with_exe = Path::new(dir).join(format!("{program}.exe"));
                 if with_exe.exists() {
                     return true;
                 }
@@ -342,13 +354,12 @@ pub async fn fetch_registry(app_handle: AppHandle) -> Result<Registry, String> {
 
     let bytes = reqwest::get(&registry_url)
         .await
-        .map_err(|e| format!("Failed to fetch registry: {}", e))?
+        .map_err(|e| format!("Failed to fetch registry: {e}"))?
         .bytes()
         .await
-        .map_err(|e| format!("Failed to read registry response: {}", e))?;
+        .map_err(|e| format!("Failed to read registry response: {e}"))?;
 
-    serde_json::from_slice(&bytes)
-        .map_err(|e| format!("Failed to parse registry: {}", e))
+    serde_json::from_slice(&bytes).map_err(|e| format!("Failed to parse registry: {e}"))
 }
 
 /// Download a plugin binary, verify its SHA256, save to the plugins dir, and register it.
@@ -358,41 +369,54 @@ pub async fn install_registry_plugin(
     plugin: RegistryPlugin,
     platform_key: String,
 ) -> Result<(), String> {
-    let platform = plugin.platforms.get(&platform_key)
-        .ok_or_else(|| format!("No binary for platform '{}'", platform_key))?;
+    let platform = plugin
+        .platforms
+        .get(&platform_key)
+        .ok_or_else(|| format!("No binary for platform '{platform_key}'"))?;
 
     // Determine install directory
     let install_dir = app_handle
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Could not resolve app data dir: {}", e))?
+        .map_err(|e| format!("Could not resolve app data dir: {e}"))?
         .join("plugins");
 
     std::fs::create_dir_all(&install_dir)
-        .map_err(|e| format!("Failed to create plugins dir: {}", e))?;
+        .map_err(|e| format!("Failed to create plugins dir: {e}"))?;
 
-    let ext = if platform_key.starts_with("windows") { ".exe" } else { "" };
+    let ext = if platform_key.starts_with("windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let filename = format!("{}-{}{}", plugin.id, platform_key, ext);
     let dest: PathBuf = install_dir.join(&filename);
 
     // Download
-    println!("[install] plugin='{}' platform='{}' url='{}'", plugin.id, platform_key, platform.url);
+    println!(
+        "[install] plugin='{}' platform='{}' url='{}'",
+        plugin.id, platform_key, platform.url
+    );
     println!("[install] dest='{}'", dest.display());
 
     let response = reqwest::get(&platform.url)
         .await
-        .map_err(|e| format!("Download failed: {}", e))?;
+        .map_err(|e| format!("Download failed: {e}"))?;
 
     println!("[install] HTTP {}", response.status());
 
     if !response.status().is_success() {
-        return Err(format!("Download failed: HTTP {} — URL: {}", response.status(), platform.url));
+        return Err(format!(
+            "Download failed: HTTP {} — URL: {}",
+            response.status(),
+            platform.url
+        ));
     }
 
     let bytes = response
         .bytes()
         .await
-        .map_err(|e| format!("Failed to read download: {}", e))?;
+        .map_err(|e| format!("Failed to read download: {e}"))?;
 
     println!("[install] downloaded {} bytes", bytes.len());
 
@@ -406,7 +430,7 @@ pub async fn install_registry_plugin(
             let result = hasher.finalize();
             let mut hex = String::with_capacity(64);
             for byte in result {
-                let _ = write!(hex, "{:02x}", byte);
+                let _ = write!(hex, "{byte:02x}");
             }
             hex
         };
@@ -419,8 +443,7 @@ pub async fn install_registry_plugin(
     }
 
     // Write binary
-    std::fs::write(&dest, &bytes)
-        .map_err(|e| format!("Failed to write plugin binary: {}", e))?;
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Failed to write plugin binary: {e}"))?;
 
     // Make executable on Unix
     #[cfg(unix)]
@@ -435,12 +458,15 @@ pub async fn install_registry_plugin(
 
     // Register plugin in settings
     let command = dest.to_string_lossy().to_string();
-    let mut manager = SettingsCoordinator::from_handle(&app_handle)
-        .map_err(|e| e.to_string())?;
+    let mut manager = SettingsCoordinator::from_handle(&app_handle).map_err(|e| e.to_string())?;
     let mut settings = manager.get_settings().clone();
 
     // Replace existing entry with same id if present, otherwise add
-    let existing = settings.target_providers.plugins.iter().position(|p| p.name == plugin.name);
+    let existing = settings
+        .target_providers
+        .plugins
+        .iter()
+        .position(|p| p.name == plugin.name);
     let entry = PluginProvider {
         id: if let Some(i) = existing {
             settings.target_providers.plugins[i].id.clone()
@@ -457,15 +483,17 @@ pub async fn install_registry_plugin(
         settings.target_providers.plugins.push(entry);
     }
 
-    manager.update_settings(settings).map_err(|e| e.to_string())?;
+    manager
+        .update_settings(settings)
+        .map_err(|e| e.to_string())?;
     let _ = app_handle.emit("settings-changed", ());
     Ok(())
 }
 
 fn extract_program(command: &str) -> String {
     let trimmed = command.trim();
-    if trimmed.starts_with('"') {
-        trimmed[1..].split('"').next().unwrap_or("").to_string()
+    if let Some(stripped) = trimmed.strip_prefix('"') {
+        stripped.split('"').next().unwrap_or("").to_string()
     } else {
         trimmed.split_whitespace().next().unwrap_or("").to_string()
     }

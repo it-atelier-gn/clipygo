@@ -41,7 +41,6 @@ enum Request<'a> {
     },
 }
 
-
 #[derive(Deserialize)]
 struct TargetsResponse {
     targets: Vec<Target>,
@@ -112,9 +111,13 @@ impl SubprocessProvider {
             .spawn()
             .map_err(|e| format!("Failed to spawn plugin '{}': {}", self.config.name, e))?;
 
-        let stdin = child.stdin.take()
+        let stdin = child
+            .stdin
+            .take()
             .ok_or_else(|| format!("Plugin '{}': could not get stdin", self.config.name))?;
-        let stdout = child.stdout.take()
+        let stdout = child
+            .stdout
+            .take()
             .ok_or_else(|| format!("Plugin '{}': could not get stdout", self.config.name))?;
 
         Ok(ProcessHandle {
@@ -128,7 +131,9 @@ impl SubprocessProvider {
     /// If the process is not running, spawns it first (calling get_info as health check).
     /// On failure, kills the process and retries once. After MAX_FAILURES, marks errored.
     fn call(&self, request: &Request) -> Result<String, String> {
-        let mut state = self.state.lock()
+        let mut state = self
+            .state
+            .lock()
             .map_err(|_| "Plugin state lock poisoned".to_string())?;
 
         if state.errored {
@@ -145,14 +150,19 @@ impl SubprocessProvider {
                     Ok(handle) => {
                         state.process = Some(handle);
                         // Health check on fresh spawn
-                        if let Err(e) = Self::send_recv(state.process.as_mut().unwrap(), &Request::GetInfo)
-                            .map(|_| ()) {
+                        if let Err(e) =
+                            Self::send_recv(state.process.as_mut().unwrap(), &Request::GetInfo)
+                                .map(|_| ())
+                        {
                             println!("Plugin '{}' get_info failed: {}", self.config.name, e);
                             state.process = None;
                             state.failure_count += 1;
                             if state.failure_count >= MAX_FAILURES {
                                 state.errored = true;
-                                return Err(format!("Plugin '{}' failed health check {} times, marking errored", self.config.name, MAX_FAILURES));
+                                return Err(format!(
+                                    "Plugin '{}' failed health check {} times, marking errored",
+                                    self.config.name, MAX_FAILURES
+                                ));
                             }
                             continue;
                         }
@@ -175,7 +185,12 @@ impl SubprocessProvider {
                     return Ok(response);
                 }
                 Err(e) => {
-                    println!("Plugin '{}' communication error (attempt {}): {}", self.config.name, attempt + 1, e);
+                    println!(
+                        "Plugin '{}' communication error (attempt {}): {}",
+                        self.config.name,
+                        attempt + 1,
+                        e
+                    );
                     // Kill the dead process
                     if let Some(mut handle) = state.process.take() {
                         let _ = handle.child.kill();
@@ -183,26 +198,33 @@ impl SubprocessProvider {
                     state.failure_count += 1;
                     if state.failure_count >= MAX_FAILURES {
                         state.errored = true;
-                        return Err(format!("Plugin '{}' failed {} times, marking errored: {}", self.config.name, MAX_FAILURES, e));
+                        return Err(format!(
+                            "Plugin '{}' failed {} times, marking errored: {}",
+                            self.config.name, MAX_FAILURES, e
+                        ));
                     }
                     // Loop will retry with a fresh spawn
                 }
             }
         }
 
-        Err(format!("Plugin '{}' failed after restart attempt", self.config.name))
+        Err(format!(
+            "Plugin '{}' failed after restart attempt",
+            self.config.name
+        ))
     }
 
     fn send_recv(handle: &mut ProcessHandle, request: &Request) -> Result<String, String> {
-        let json = serde_json::to_string(request)
-            .map_err(|e| format!("Serialization error: {}", e))?;
+        let json =
+            serde_json::to_string(request).map_err(|e| format!("Serialization error: {e}"))?;
 
-        writeln!(handle.stdin, "{}", json)
-            .map_err(|e| format!("Write error: {}", e))?;
+        writeln!(handle.stdin, "{json}").map_err(|e| format!("Write error: {e}"))?;
 
         let mut response = String::new();
-        handle.reader.read_line(&mut response)
-            .map_err(|e| format!("Read error: {}", e))?;
+        handle
+            .reader
+            .read_line(&mut response)
+            .map_err(|e| format!("Read error: {e}"))?;
 
         if response.is_empty() {
             return Err("Plugin closed stdout unexpectedly".to_string());
@@ -251,19 +273,26 @@ impl TargetProvider for SubprocessProvider {
         if parsed.success {
             Ok(())
         } else {
-            Err(parsed.error.unwrap_or_else(|| "Unknown plugin error".to_string()).into())
+            Err(parsed
+                .error
+                .unwrap_or_else(|| "Unknown plugin error".to_string())
+                .into())
         }
     }
 
     fn is_enabled(&self, settings: &TargetProviderSettings) -> bool {
-        settings.plugins
+        settings
+            .plugins
             .iter()
             .any(|p| p.id == self.config.id && p.enabled)
     }
 }
 
-pub fn create_subprocess_providers(settings: &TargetProviderSettings) -> Vec<Arc<dyn TargetProvider>> {
-    settings.plugins
+pub fn create_subprocess_providers(
+    settings: &TargetProviderSettings,
+) -> Vec<Arc<dyn TargetProvider>> {
+    settings
+        .plugins
         .iter()
         .map(|plugin| Arc::new(SubprocessProvider::new(plugin.clone())) as Arc<dyn TargetProvider>)
         .collect()

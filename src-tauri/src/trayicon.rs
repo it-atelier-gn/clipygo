@@ -5,8 +5,7 @@ pub fn setup(app: &mut tauri::App) {
         image::Image,
         menu::{MenuBuilder, MenuItem},
         tray::TrayIconBuilder,
-        WebviewWindowBuilder,
-        WebviewUrl,
+        WebviewUrl, WebviewWindowBuilder,
     };
 
     // Create menu items
@@ -48,7 +47,7 @@ pub fn setup(app: &mut tauri::App) {
                     let settings_window = WebviewWindowBuilder::new(
                         app,
                         "settings",
-                        WebviewUrl::App("settings".into())
+                        WebviewUrl::App("settings".into()),
                     )
                     .title("Settings - clipygo")
                     .devtools(true)
