@@ -62,7 +62,11 @@ impl TargetProviderCoordinator {
 
         // Remove providers no longer in settings
         self.providers.retain(|name, _| {
-            settings.target_providers.plugins.iter().any(|p| p.name == *name)
+            settings
+                .target_providers
+                .plugins
+                .iter()
+                .any(|p| p.name == *name)
         });
 
         // Re-register subprocess providers
@@ -72,7 +76,11 @@ impl TargetProviderCoordinator {
 
         for (name, provider) in &self.providers {
             let enabled = provider.is_enabled(&settings.target_providers);
-            println!("Provider '{}' is {}", name, if enabled { "enabled" } else { "disabled" });
+            println!(
+                "Provider '{}' is {}",
+                name,
+                if enabled { "enabled" } else { "disabled" }
+            );
         }
     }
 
@@ -89,7 +97,7 @@ pub async fn get_targets(
 ) -> Result<Vec<Target>, String> {
     let (providers, settings) = coordinator
         .lock()
-        .map_err(|e| format!("Failed to lock coordinator: {}", e))?
+        .map_err(|e| format!("Failed to lock coordinator: {e}"))?
         .snapshot();
     // MutexGuard is dropped here — safe to await below
 
@@ -115,7 +123,7 @@ pub async fn send_to_target(
 ) -> Result<(), String> {
     let (providers, settings) = coordinator
         .lock()
-        .map_err(|e| format!("Failed to lock coordinator: {}", e))?
+        .map_err(|e| format!("Failed to lock coordinator: {e}"))?
         .snapshot();
     // MutexGuard is dropped here — safe to await below
 
@@ -128,10 +136,10 @@ pub async fn send_to_target(
                 return provider
                     .send_to_target(&target_id, &payload)
                     .await
-                    .map_err(|e| format!("Failed to send to target: {}", e));
+                    .map_err(|e| format!("Failed to send to target: {e}"));
             }
         }
     }
 
-    Err(format!("Target '{}' not found", target_id))
+    Err(format!("Target '{target_id}' not found"))
 }
