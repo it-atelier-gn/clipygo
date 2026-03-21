@@ -23,13 +23,13 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-clipboard = "2.1.11"
-tauri-plugin-store = "2"
+tauri-plugin-store = "~2.2"
 regex = "1.11.1"
 tmuntaner-keyring = "0.1.0-alpha.15"
 async-trait = "0.1"
 uuid = { version = "1.0", features = ["v4"] }
 base64 = "0.22"
-reqwest = { version = "0.12", default-features = false, features = ["native-tls", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json"] }
 sha2 = "0.10"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
