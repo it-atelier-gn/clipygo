@@ -288,6 +288,134 @@ impl TargetProvider for SubprocessProvider {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Request serialization ---
+
+    #[test]
+    fn request_get_info_serializes() {
+        let json = serde_json::to_string(&Request::GetInfo).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["command"], "get_info");
+    }
+
+    #[test]
+    fn request_get_targets_serializes() {
+        let json = serde_json::to_string(&Request::GetTargets).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["command"], "get_targets");
+    }
+
+    #[test]
+    fn request_send_serializes() {
+        let json = serde_json::to_string(&Request::Send {
+            target_id: "t1",
+            content: "hello",
+            format: "text",
+        })
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["command"], "send");
+        assert_eq!(v["target_id"], "t1");
+        assert_eq!(v["content"], "hello");
+        assert_eq!(v["format"], "text");
+    }
+
+    // --- Response deserialization ---
+
+    #[test]
+    fn targets_response_deserializes() {
+        let json = r#"{"targets":[{"id":"t1","provider":"p","formats":["text"],"title":"T","description":"D","image":""}]}"#;
+        let r: TargetsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(r.targets.len(), 1);
+        assert_eq!(r.targets[0].id, "t1");
+    }
+
+    #[test]
+    fn targets_response_empty_list() {
+        let r: TargetsResponse = serde_json::from_str(r#"{"targets":[]}"#).unwrap();
+        assert!(r.targets.is_empty());
+    }
+
+    #[test]
+    fn send_response_success() {
+        let r: SendResponse = serde_json::from_str(r#"{"success":true}"#).unwrap();
+        assert!(r.success);
+        assert!(r.error.is_none());
+    }
+
+    #[test]
+    fn send_response_failure_with_error() {
+        let r: SendResponse =
+            serde_json::from_str(r#"{"success":false,"error":"something went wrong"}"#).unwrap();
+        assert!(!r.success);
+        assert_eq!(r.error.as_deref(), Some("something went wrong"));
+    }
+
+    #[test]
+    fn send_response_failure_without_error_field() {
+        let r: SendResponse = serde_json::from_str(r#"{"success":false}"#).unwrap();
+        assert!(!r.success);
+        assert!(r.error.is_none());
+    }
+
+    // --- parse_command ---
+
+    #[test]
+    fn parse_command_simple() {
+        let (prog, args) = parse_command("node plugin.js").unwrap();
+        assert_eq!(prog, "node");
+        assert_eq!(args, vec!["plugin.js"]);
+    }
+
+    #[test]
+    fn parse_command_no_args() {
+        let (prog, args) = parse_command("myplugin").unwrap();
+        assert_eq!(prog, "myplugin");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn parse_command_multiple_args() {
+        let (prog, args) = parse_command("node plugin.js --verbose --port 8080").unwrap();
+        assert_eq!(prog, "node");
+        assert_eq!(args, vec!["plugin.js", "--verbose", "--port", "8080"]);
+    }
+
+    #[test]
+    fn parse_command_quoted_program() {
+        let (prog, args) = parse_command(r#""C:\path with spaces\plugin.exe" --arg"#).unwrap();
+        assert_eq!(prog, r"C:\path with spaces\plugin.exe");
+        assert_eq!(args, vec!["--arg"]);
+    }
+
+    #[test]
+    fn parse_command_quoted_arg() {
+        let (prog, args) = parse_command(r#"node "my plugin.js""#).unwrap();
+        assert_eq!(prog, "node");
+        assert_eq!(args, vec!["my plugin.js"]);
+    }
+
+    #[test]
+    fn parse_command_extra_spaces() {
+        let (prog, args) = parse_command("node  plugin.js").unwrap();
+        assert_eq!(prog, "node");
+        assert_eq!(args, vec!["plugin.js"]);
+    }
+
+    #[test]
+    fn parse_command_empty_returns_none() {
+        assert!(parse_command("").is_none());
+    }
+
+    #[test]
+    fn parse_command_whitespace_only_returns_none() {
+        assert!(parse_command("   ").is_none());
+    }
+}
+
 pub fn create_subprocess_providers(
     settings: &TargetProviderSettings,
 ) -> Vec<Arc<dyn TargetProvider>> {
