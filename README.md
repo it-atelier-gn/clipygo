@@ -1,6 +1,6 @@
 # 📋 clipygo
 
-[![Build](https://github.com/it-atelier-gn/clipygo/actions/workflows/build.yml/badge.svg)](https://github.com/it-atelier-gn/clipygo/actions)
+[![Build](https://github.com/it-atelier-gn/clipygo/actions/workflows/ci.yml/badge.svg)](https://github.com/it-atelier-gn/clipygo/actions)
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/tauri-2.x-blue?logo=tauri)](https://tauri.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
