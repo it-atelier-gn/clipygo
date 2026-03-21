@@ -1,6 +1,6 @@
 [package]
 name = "clipygo"
-version = "0.1.0"
+version = "0.0.0-dev"
 description = "Clipboard-to-X"
 authors = ["Georg Nelles"]
 edition = "2021"
