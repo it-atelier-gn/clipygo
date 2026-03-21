@@ -167,6 +167,103 @@ fn compile_patterns(regex_list: &[String]) -> Vec<Regex> {
     patterns
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compile_patterns_valid() {
+        let patterns = compile_patterns(&[r"https://meet\.google\.com/\w+".to_string()]);
+        assert_eq!(patterns.len(), 1);
+    }
+
+    #[test]
+    fn compile_patterns_invalid_skipped() {
+        let patterns = compile_patterns(&["[invalid".to_string()]);
+        assert_eq!(patterns.len(), 0);
+    }
+
+    #[test]
+    fn compile_patterns_mixed() {
+        let patterns = compile_patterns(&[
+            r"valid\d+".to_string(),
+            "[invalid".to_string(),
+            r"also_valid".to_string(),
+        ]);
+        assert_eq!(patterns.len(), 2);
+    }
+
+    #[test]
+    fn compile_patterns_empty_list() {
+        assert_eq!(compile_patterns(&[]).len(), 0);
+    }
+
+    #[test]
+    fn compile_patterns_default_regex_list_all_valid() {
+        let defaults = settings::AppSettings::default();
+        let patterns = compile_patterns(&defaults.regex_list);
+        assert_eq!(patterns.len(), defaults.regex_list.len());
+    }
+
+    #[test]
+    fn compile_patterns_matches_expected() {
+        let patterns =
+            compile_patterns(
+                &[r"https://meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}".to_string()],
+            );
+        assert!(patterns[0].is_match("https://meet.google.com/abc-defg-hij"));
+        assert!(!patterns[0].is_match("https://zoom.us/j/123456"));
+    }
+
+    // --- Default regex patterns ---
+
+    fn default_patterns() -> Vec<regex::Regex> {
+        compile_patterns(&settings::AppSettings::default().regex_list)
+    }
+
+    fn matches_any(text: &str) -> bool {
+        default_patterns().iter().any(|p| p.is_match(text))
+    }
+
+    #[test]
+    fn default_pattern_jetbrains_code_with_me_matches() {
+        assert!(matches_any("https://code-with-me.jetbrains.com/abc123-XYZ"));
+    }
+
+    #[test]
+    fn default_pattern_zoom_matches() {
+        assert!(matches_any("https://mycompany.zoom.us/j/98765432100"));
+    }
+
+    #[test]
+    fn default_pattern_google_meet_matches() {
+        assert!(matches_any("https://meet.google.com/abc-defg-hij"));
+    }
+
+    #[test]
+    fn default_pattern_teams_matches() {
+        assert!(matches_any(
+            "https://teams.microsoft.com/l/meetup-join/19%3Ameeting_abc%40thread.v2/0?context=%7B%7D"
+        ));
+    }
+
+    #[test]
+    fn default_patterns_reject_plain_url() {
+        assert!(!matches_any("https://example.com"));
+    }
+
+    #[test]
+    fn default_patterns_reject_empty_string() {
+        assert!(!matches_any(""));
+    }
+
+    #[test]
+    fn default_pattern_google_meet_rejects_wrong_format() {
+        // slug must be xxx-xxxx-xxx (3-4-3 lowercase)
+        assert!(!matches_any("https://meet.google.com/toolong-slug"));
+    }
+}
+
 /// Registers the clipboard update listener exactly once.
 /// Patterns are read from `shared_patterns` on every event, so updates take effect immediately.
 fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<Vec<Regex>>>) {

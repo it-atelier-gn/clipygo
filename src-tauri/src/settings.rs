@@ -490,11 +490,137 @@ pub async fn install_registry_plugin(
     Ok(())
 }
 
-fn extract_program(command: &str) -> String {
+pub(crate) fn extract_program(command: &str) -> String {
     let trimmed = command.trim();
     if let Some(stripped) = trimmed.strip_prefix('"') {
         stripped.split('"').next().unwrap_or("").to_string()
     } else {
         trimmed.split_whitespace().next().unwrap_or("").to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- extract_program ---
+
+    #[test]
+    fn extract_program_bare_name() {
+        assert_eq!(extract_program("node plugin.js"), "node");
+    }
+
+    #[test]
+    fn extract_program_quoted_path_with_spaces() {
+        assert_eq!(
+            extract_program(r#""C:\path with spaces\plugin.exe" --arg"#),
+            r"C:\path with spaces\plugin.exe"
+        );
+    }
+
+    #[test]
+    fn extract_program_single_token() {
+        assert_eq!(extract_program("myplugin"), "myplugin");
+    }
+
+    #[test]
+    fn extract_program_empty() {
+        assert_eq!(extract_program(""), "");
+    }
+
+    #[test]
+    fn extract_program_whitespace_only() {
+        assert_eq!(extract_program("   "), "");
+    }
+
+    #[test]
+    fn extract_program_trims_leading_whitespace() {
+        assert_eq!(extract_program("  node plugin.js"), "node");
+    }
+
+    // --- AppSettings serde roundtrip ---
+
+    #[test]
+    fn app_settings_default_roundtrip() {
+        let original = AppSettings::default();
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: AppSettings = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.autostart, original.autostart);
+        assert_eq!(restored.global_shortcut, original.global_shortcut);
+        assert_eq!(restored.regex_list, original.regex_list);
+        assert_eq!(restored.registry_url, original.registry_url);
+    }
+
+    #[test]
+    fn app_settings_missing_registry_url_uses_default() {
+        // Simulate old stored JSON that has no registry_url field
+        let json = r#"{
+            "autostart": false,
+            "global_shortcut": "Ctrl+F1",
+            "regex_list": [],
+            "target_providers": { "msteams": { "enabled": false }, "plugins": [] }
+        }"#;
+        let settings: AppSettings = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(
+            settings.registry_url,
+            "https://raw.githubusercontent.com/it-atelier-gn/clipygo-plugins/main/registry.json"
+        );
+    }
+
+    #[test]
+    fn registry_plugin_roundtrip() {
+        let mut platforms = std::collections::HashMap::new();
+        platforms.insert(
+            "windows-x86_64".to_string(),
+            RegistryPlatform {
+                url: "https://example.com/plugin.exe".to_string(),
+                sha256: "abc123".to_string(),
+            },
+        );
+        let plugin = RegistryPlugin {
+            id: "my-plugin".to_string(),
+            name: "My Plugin".to_string(),
+            description: "Does stuff".to_string(),
+            author: "Alice".to_string(),
+            version: "1.0.0".to_string(),
+            repo: "https://github.com/alice/my-plugin".to_string(),
+            platforms,
+        };
+        let json = serde_json::to_string(&plugin).unwrap();
+        let r: RegistryPlugin = serde_json::from_str(&json).unwrap();
+        assert_eq!(r.id, plugin.id);
+        assert_eq!(r.name, plugin.name);
+        assert_eq!(r.version, plugin.version);
+        let win = r.platforms.get("windows-x86_64").unwrap();
+        assert_eq!(win.url, "https://example.com/plugin.exe");
+        assert_eq!(win.sha256, "abc123");
+    }
+
+    #[test]
+    fn registry_roundtrip() {
+        let registry = Registry {
+            version: 1,
+            plugins: vec![],
+        };
+        let json = serde_json::to_string(&registry).unwrap();
+        let r: Registry = serde_json::from_str(&json).unwrap();
+        assert_eq!(r.version, 1);
+        assert!(r.plugins.is_empty());
+    }
+
+    #[test]
+    fn plugin_provider_roundtrip() {
+        let plugin = PluginProvider {
+            id: "abc-123".to_string(),
+            name: "My Plugin".to_string(),
+            command: r#""C:\plugins\foo.exe" --verbose"#.to_string(),
+            enabled: true,
+        };
+        let json = serde_json::to_string(&plugin).expect("serialize");
+        let restored: PluginProvider = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.id, plugin.id);
+        assert_eq!(restored.name, plugin.name);
+        assert_eq!(restored.command, plugin.command);
+        assert_eq!(restored.enabled, plugin.enabled);
     }
 }

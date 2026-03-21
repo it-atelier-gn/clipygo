@@ -91,6 +91,70 @@ impl TargetProviderCoordinator {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_target() -> Target {
+        Target {
+            id: "target-1".to_string(),
+            provider: "my-plugin".to_string(),
+            formats: vec!["text".to_string(), "html".to_string()],
+            title: "My Channel".to_string(),
+            description: "A description".to_string(),
+            image: "base64data==".to_string(),
+        }
+    }
+
+    #[test]
+    fn target_roundtrip() {
+        let t = sample_target();
+        let json = serde_json::to_string(&t).unwrap();
+        let r: Target = serde_json::from_str(&json).unwrap();
+        assert_eq!(r.id, t.id);
+        assert_eq!(r.provider, t.provider);
+        assert_eq!(r.formats, t.formats);
+        assert_eq!(r.title, t.title);
+        assert_eq!(r.description, t.description);
+        assert_eq!(r.image, t.image);
+    }
+
+    #[test]
+    fn target_field_names_match_protocol() {
+        let json = serde_json::to_string(&sample_target()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(v.get("id").is_some());
+        assert!(v.get("provider").is_some());
+        assert!(v.get("formats").is_some());
+        assert!(v.get("title").is_some());
+        assert!(v.get("description").is_some());
+        assert!(v.get("image").is_some());
+    }
+
+    #[test]
+    fn send_payload_roundtrip() {
+        let p = SendPayload {
+            content: "clipboard text".to_string(),
+            format: "text".to_string(),
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        let r: SendPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(r.content, p.content);
+        assert_eq!(r.format, p.format);
+    }
+
+    #[test]
+    fn send_payload_field_names_match_protocol() {
+        let p = SendPayload {
+            content: "x".to_string(),
+            format: "text".to_string(),
+        };
+        let v: serde_json::Value = serde_json::to_value(&p).unwrap();
+        assert!(v.get("content").is_some());
+        assert!(v.get("format").is_some());
+    }
+}
+
 #[tauri::command]
 pub async fn get_targets(
     coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
