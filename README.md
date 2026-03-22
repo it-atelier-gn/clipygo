@@ -67,6 +67,7 @@ flowchart TD
 - [Node.js](https://nodejs.org/) 18+ with npm
 - [Tauri CLI](https://tauri.app/start/): `cargo install tauri-cli`
 - Windows 10/11 (primary target; macOS and Linux experimental)
+- [WebView2 runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) — pre-installed on Windows 11 and most Windows 10 systems; required for the portable build
 
 ### Build & Run
 
@@ -268,13 +269,6 @@ clipygo/
 - 🔒 **Snapshot pattern** — `TargetProviderCoordinator::snapshot()` extracts providers before any `.await`, avoiding `MutexGuard` held across async boundaries
 - 💾 **Settings via tauri-plugin-store** — JSON persistence with reactive reload; settings changes trigger live coordinator reload without restart
 - 🔑 **OS keychain ready** — `tmuntaner-keyring` is available for providers that need to store secrets (e.g. OAuth tokens)
-
----
-
-## 🗺️ Roadmap
-
-- [ ] **Microsoft Teams built-in provider** — Graph API with delegated OAuth + PKCE, OS keychain token storage, dynamic chat/channel target list
-- [ ] **Plugin error state UI** — show plugin error state and reset button in settings
 
 ---
 
