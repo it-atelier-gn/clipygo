@@ -1,5 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -103,11 +105,17 @@ impl SubprocessProvider {
         let (program, args) = parse_command(&self.config.command)
             .ok_or_else(|| format!("Empty command for plugin '{}'", self.config.name))?;
 
-        let mut child = Command::new(&program)
-            .args(&args)
+        #[allow(unused_mut)]
+        let mut cmd = Command::new(&program);
+        cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+        let mut child = cmd
             .spawn()
             .map_err(|e| format!("Failed to spawn plugin '{}': {}", self.config.name, e))?;
 
