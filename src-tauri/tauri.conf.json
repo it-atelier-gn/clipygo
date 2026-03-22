@@ -16,7 +16,7 @@
         "title": "clipygo",
         "url": "/main",
         "width": 1024,
-        "height": 768,
+        "height": 576,
         "decorations": false,
         "alwaysOnTop": true,
         "focus": true,

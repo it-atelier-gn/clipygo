@@ -11,6 +11,7 @@
   "permissions": [
     "core:window:allow-hide",
     "core:window:allow-show",
+    "core:window:allow-start-dragging",
     "global-shortcut:default",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",

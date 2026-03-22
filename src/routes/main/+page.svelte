@@ -32,6 +32,13 @@
   let messageType: 'success' | 'error' | '' = '';
   let selectedTargetIndex = 0;
 
+  $: clipboardFormat = clipboardContent ? 'text' : clipboardImage ? 'image' : null;
+  $: compatibleCount = targets.filter(t => clipboardFormat !== null && t.formats.includes(clipboardFormat)).length;
+
+  function isCompatible(target: Target): boolean {
+    return clipboardFormat !== null && target.formats.includes(clipboardFormat);
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       const window = getCurrentWebviewWindow();
@@ -105,8 +112,13 @@
   }
 
   async function sendToTarget(target: Target, fromClick = false) {
-    if (!clipboardContent.trim()) {
+    if (!clipboardFormat) {
       showMessage('No clipboard content to send', 'error');
+      return;
+    }
+
+    if (!isCompatible(target)) {
+      showMessage(`${target.title} does not support ${clipboardFormat} content`, 'error');
       return;
     }
 
@@ -118,8 +130,8 @@
     sendingTo = target.id;
     try {
       const payload: SendPayload = {
-        content: clipboardContent,
-        format: 'text'
+        content: clipboardFormat === 'image' ? clipboardImage : clipboardContent,
+        format: clipboardFormat
       };
       
       await invoke('send_to_target', { 
@@ -181,7 +193,7 @@
   <!-- Header -->
   <header class="header" data-tauri-drag-region>
     <div class="header-content flex justify-between items-center" data-tauri-drag-region>
-      <h1 class="h2 text-glow" data-tauri-drag-region>📋 clipygo</h1>
+      <h1 class="h2 title-shimmer" data-tauri-drag-region>📋 clipygo</h1>
       <div class="header-actions flex gap-sm">
         <button
           class="btn btn-secondary btn-sm"
@@ -233,8 +245,8 @@
           {:else}
             <div class="empty-state compact" data-tauri-drag-region>
               <div class="empty-icon" data-tauri-drag-region>📄</div>
-              <h3 class="h6" data-tauri-drag-region>No Content</h3>
-              <p class="text-secondary" data-tauri-drag-region>Copy content to start</p>
+              <h3 class="h6" data-tauri-drag-region>No compatible content</h3>
+              <p class="text-secondary" data-tauri-drag-region>Copy text or an image</p>
             </div>
           {/if}
         </div>
@@ -255,7 +267,9 @@
       <section class="card targets-section" data-tauri-drag-region>
         <header class="card-header" data-tauri-drag-region>
           <h2 class="h4" data-tauri-drag-region>🎯 Targets</h2>
-          {#if targets.length > 0}
+          {#if targets.length > 0 && clipboardFormat !== null}
+            <span class="badge badge-success" data-tauri-drag-region>{compatibleCount}/{targets.length} compatible</span>
+          {:else if targets.length > 0}
             <span class="badge badge-success" data-tauri-drag-region>{targets.length} available</span>
           {/if}
         </header>
@@ -269,18 +283,21 @@
           {:else if targets.length > 0}
             <div class="targets-grid">
               {#each targets as target, index}
+                {@const compatible = isCompatible(target)}
                 <button
                   class="target-card compact"
                   class:sending={sendingTo === target.id}
                   class:disabled={sendingTo !== null && sendingTo !== target.id}
-                  class:selected={index === selectedTargetIndex}
+                  class:unsupported={!compatible}
+                  class:selected={index === selectedTargetIndex && compatible}
                   disabled={sendingTo !== null}
+                  title={!compatible ? `Requires: ${target.formats.join(', ')}` : undefined}
                   on:click={() => sendToTarget(target, true)}
                   data-tauri-drag-region="false"
                 >
                   <div class="target-avatar small">
-                    <img 
-                      src="data:image/png;base64,{target.image}" 
+                    <img
+                      src="data:image/png;base64,{target.image}"
                       alt={target.title}
                       on:error={handleImageError}
                     />
@@ -288,18 +305,23 @@
                       {target.title.substring(0, 1).toUpperCase()}
                     </div>
                   </div>
-                  
+
                   <div class="target-info">
                     <h3 class="target-title">{target.title}</h3>
                     <p class="target-description text-secondary">{target.description}</p>
                     <div class="target-badges">
                       <span class="badge badge-provider">{target.provider}</span>
+                      {#if !compatible}
+                        <span class="badge badge-format-hint">{target.formats.join(' · ').toUpperCase()} ONLY</span>
+                      {/if}
                     </div>
                   </div>
-                  
+
                   <div class="target-action">
                     {#if sendingTo === target.id}
                       <div class="spinner micro"></div>
+                    {:else if !compatible}
+                      <span class="incompatible-icon">⊘</span>
                     {:else}
                       <span class="send-arrow">→</span>
                     {/if}
@@ -339,19 +361,31 @@
     flex: 1;
     padding: var(--space-md);
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
   }
 
   .transfer-layout {
+    flex: 1;
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     gap: var(--space-md);
-    align-items: start;
-    height: 100%;
+    align-items: stretch;
   }
 
-  .clipboard-section, 
+  .clipboard-section,
   .targets-section {
+    display: flex;
+    flex-direction: column;
     min-height: 300px;
+  }
+
+  .clipboard-section .card-body,
+  .targets-section .card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .card-header {
@@ -387,7 +421,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: var(--space-md) 0;
   }
 
   .arrow-container {
@@ -420,7 +453,7 @@
     line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 250px;
+    flex: 1;
     overflow-y: auto;
     position: relative;
     box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -430,7 +463,7 @@
     border: 2px solid var(--border-accent);
     border-radius: var(--radius-md);
     overflow: hidden;
-    max-height: 250px;
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -459,6 +492,9 @@
   .targets-grid {
     display: grid;
     gap: var(--space-sm);
+    align-content: start;
+    flex: 1;
+    overflow-y: auto;
   }
 
   .target-card {
@@ -530,6 +566,34 @@
 
   .target-card:disabled {
     cursor: not-allowed;
+  }
+
+  .target-card.unsupported {
+    filter: grayscale(0.8);
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .target-card.unsupported:hover {
+    border-color: var(--border-primary);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .target-card.unsupported:hover::before {
+    opacity: 0;
+  }
+
+  .badge-format-hint {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    border: 1px solid var(--border-secondary);
+  }
+
+  .incompatible-icon {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    opacity: 0.6;
   }
 
   .target-avatar {
@@ -755,6 +819,26 @@
     width: 16px;
     height: 16px;
     border-width: 1px;
+  }
+
+  /* Title shimmer */
+  .title-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--accent-primary) 20%,
+      #ffffff 50%,
+      var(--accent-primary) 80%
+    );
+    background-size: 200% auto;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 3s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: 200% center; }
+    100% { background-position: -200% center; }
   }
 
   /* Animations */

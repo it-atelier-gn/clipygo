@@ -256,13 +256,13 @@
 
 <svelte:window on:keydown={(e) => e.key === 'Escape' && closeWindow()} />
 
-<div class="app">
+<div class="app" data-tauri-drag-region>
   <div class="container">
     <!-- Header -->
     <div class="header compact">
       <div class="header-content flex justify-between items-center">
         <div class="header-main" data-tauri-drag-region>
-          <h1 class="h2 text-glow" data-tauri-drag-region>⚙️ clipygo Settings</h1>
+          <h1 class="h2 title-shimmer" data-tauri-drag-region>⚙️ clipygo Settings</h1>
           <p class="subtitle" data-tauri-drag-region>Configure your application</p>
         </div>
         <button class="btn btn-danger btn-sm close-btn-aligned" on:click={closeWindow}>
@@ -546,6 +546,25 @@
 </div>
 
 <style>
+  .title-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--accent-primary) 20%,
+      #ffffff 50%,
+      var(--accent-primary) 80%
+    );
+    background-size: 200% auto;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 3s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: 200% center; }
+    100% { background-position: -200% center; }
+  }
+
   .header-content {
     display: flex;
     justify-content: space-between;
