@@ -26,7 +26,7 @@ pub fn setup(app: &mut tauri::App) {
     let _tray = TrayIconBuilder::with_id("tray")
         .tooltip("clipygo")
         .icon(
-            Image::from_bytes(include_bytes!("../icons/custom/2_32x32.png"))
+            Image::from_bytes(include_bytes!("../icons/32x32.png"))
                 .expect("Failed to load icon"),
         )
         .menu(&menu)

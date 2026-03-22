@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1f2d"/>
+      <stop offset="100%" stop-color="#060e16"/>
+    </linearGradient>
+    <linearGradient id="letters" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#00d4ff"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" ry="220" fill="url(#bg)"/>
+
+  <!-- Subtle border glow -->
+  <rect width="1024" height="1024" rx="220" ry="220"
+        fill="none" stroke="#00d4ff" stroke-width="6" opacity="0.25"/>
+
+  <!-- CY letters -->
+  <text
+    x="512" y="660"
+    font-family="'Segoe UI', 'Arial Black', Arial, sans-serif"
+    font-size="560"
+    font-weight="900"
+    text-anchor="middle"
+    fill="url(#letters)"
+    filter="url(#glow)"
+    letter-spacing="-20"
+  >CG</text>
+</svg>
