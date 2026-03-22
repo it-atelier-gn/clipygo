@@ -25,10 +25,7 @@ pub fn setup(app: &mut tauri::App) {
     // Create tray icon
     let _tray = TrayIconBuilder::with_id("tray")
         .tooltip("clipygo")
-        .icon(
-            Image::from_bytes(include_bytes!("../icons/32x32.png"))
-                .expect("Failed to load icon"),
-        )
+        .icon(Image::from_bytes(include_bytes!("../icons/32x32.png")).expect("Failed to load icon"))
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
