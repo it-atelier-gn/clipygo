@@ -87,6 +87,13 @@ jobs:
           tauriScript: npx tauri
           args: --target ${{ matrix.target }}
 
+      - name: Package portable zip (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cp src-tauri/target/${{ matrix.target }}/release/clipygo.exe clipygo.exe
+          7z a ${{ matrix.artifact }}-portable.zip clipygo.exe
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -99,6 +106,7 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
             src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.tar.gz
+            ${{ matrix.artifact }}-portable.zip
 
   release:
     name: Create Release
@@ -118,3 +126,16 @@ jobs:
         with:
           files: artifacts/**/*
           generate_release_notes: true
+          body: |
+            ## Installation
+
+            | File | Description |
+            |---|---|
+            | `*-setup.exe` | Windows installer (recommended) |
+            | `*-portable.zip` | Windows portable — extract and run, no install needed |
+            | `*.msi` | Windows MSI installer |
+            | `*.deb` | Debian/Ubuntu package |
+            | `*.AppImage` | Linux portable |
+            | `*.dmg` | macOS disk image |
+
+            > **Windows portable users:** requires the [WebView2 runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/). Already present on Windows 11 and most Windows 10 systems. If the app doesn't start, install WebView2 first.
