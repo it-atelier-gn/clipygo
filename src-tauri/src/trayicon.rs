@@ -71,19 +71,16 @@ pub fn setup(app: &mut tauri::App) {
                     window.show().unwrap();
                     window.set_focus().unwrap();
                 } else {
-                    let about_window = WebviewWindowBuilder::new(
-                        app,
-                        "about",
-                        WebviewUrl::App("about".into()),
-                    )
-                    .title("About - clipygo")
-                    .inner_size(360.0, 360.0)
-                    .resizable(false)
-                    .decorations(false)
-                    .devtools(true)
-                    .center()
-                    .build()
-                    .unwrap();
+                    let about_window =
+                        WebviewWindowBuilder::new(app, "about", WebviewUrl::App("about".into()))
+                            .title("About - clipygo")
+                            .inner_size(360.0, 360.0)
+                            .resizable(false)
+                            .decorations(false)
+                            .devtools(true)
+                            .center()
+                            .build()
+                            .unwrap();
 
                     let about_window_clone = about_window.clone();
                     about_window.on_window_event(move |event| {
