@@ -11,6 +11,7 @@ pub fn setup(app: &mut tauri::App) {
     // Create menu items
     let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>).unwrap();
     let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>).unwrap();
+    let about_i = MenuItem::with_id(app, "about", "About", true, None::<&str>).unwrap();
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).unwrap();
 
     // Build menu
@@ -18,6 +19,7 @@ pub fn setup(app: &mut tauri::App) {
         .item(&show_i)
         .item(&settings_i)
         .separator()
+        .item(&about_i)
         .item(&quit_i)
         .build()
         .unwrap();
@@ -60,6 +62,34 @@ pub fn setup(app: &mut tauri::App) {
                         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                             api.prevent_close();
                             settings_window_clone.hide().unwrap();
+                        }
+                    });
+                }
+            }
+            "about" => {
+                if let Some(window) = app.get_webview_window("about") {
+                    window.show().unwrap();
+                    window.set_focus().unwrap();
+                } else {
+                    let about_window = WebviewWindowBuilder::new(
+                        app,
+                        "about",
+                        WebviewUrl::App("about".into()),
+                    )
+                    .title("About - clipygo")
+                    .inner_size(360.0, 360.0)
+                    .resizable(false)
+                    .decorations(false)
+                    .devtools(true)
+                    .center()
+                    .build()
+                    .unwrap();
+
+                    let about_window_clone = about_window.clone();
+                    about_window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            about_window_clone.hide().unwrap();
                         }
                     });
                 }
