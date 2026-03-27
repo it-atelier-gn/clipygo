@@ -318,12 +318,8 @@ impl TargetProvider for SubprocessProvider {
         values: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let response = self.call(&Request::SetConfig { values: &values })?;
-        let parsed: SendResponse = serde_json::from_str(&response).map_err(|e| {
-            format!(
-                "Plugin '{}' bad set_config response: {e}",
-                self.config.name
-            )
-        })?;
+        let parsed: SendResponse = serde_json::from_str(&response)
+            .map_err(|e| format!("Plugin '{}' bad set_config response: {e}", self.config.name))?;
         if parsed.success {
             Ok(())
         } else {
