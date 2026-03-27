@@ -32,6 +32,21 @@ pub trait TargetProvider: Send + Sync {
         payload: &SendPayload,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
     fn is_enabled(&self, settings: &TargetProviderSettings) -> bool;
+
+    /// Returns `Some({schema, values})` if this provider supports configuration, `None` otherwise.
+    async fn get_config_schema(
+        &self,
+    ) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(None)
+    }
+
+    /// Applies configuration values. Only called if `get_config_schema` returned `Some`.
+    async fn set_config(
+        &self,
+        _values: serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Err("This provider does not support configuration".into())
+    }
 }
 
 pub struct TargetProviderCoordinator {
@@ -88,6 +103,19 @@ impl TargetProviderCoordinator {
     pub fn snapshot(&self) -> (Vec<Arc<dyn TargetProvider>>, AppSettings) {
         let providers = self.providers.values().cloned().collect();
         (providers, self.settings.clone())
+    }
+
+    /// Looks up a provider by plugin id (from settings), returning a cloned Arc.
+    pub fn get_provider_by_id(&self, plugin_id: &str) -> Option<Arc<dyn TargetProvider>> {
+        let name = self
+            .settings
+            .target_providers
+            .plugins
+            .iter()
+            .find(|p| p.id == plugin_id)?
+            .name
+            .clone();
+        self.providers.get(&name).cloned()
     }
 }
 
@@ -177,6 +205,39 @@ pub async fn get_targets(
 
     println!("Total targets retrieved: {}", all_targets.len());
     Ok(all_targets)
+}
+
+#[tauri::command]
+pub async fn get_plugin_config_schema(
+    coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
+    plugin_id: String,
+) -> Result<serde_json::Value, String> {
+    let provider = coordinator
+        .lock()
+        .map_err(|e| format!("Failed to lock coordinator: {e}"))?
+        .get_provider_by_id(&plugin_id)
+        .ok_or_else(|| format!("Plugin '{plugin_id}' not found"))?;
+
+    provider
+        .get_config_schema()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Plugin does not support configuration".to_string())
+}
+
+#[tauri::command]
+pub async fn set_plugin_config(
+    coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
+    plugin_id: String,
+    values: serde_json::Value,
+) -> Result<(), String> {
+    let provider = coordinator
+        .lock()
+        .map_err(|e| format!("Failed to lock coordinator: {e}"))?
+        .get_provider_by_id(&plugin_id)
+        .ok_or_else(|| format!("Plugin '{plugin_id}' not found"))?;
+
+    provider.set_config(values).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]

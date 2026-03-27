@@ -36,6 +36,10 @@ pub struct SubprocessProvider {
 enum Request<'a> {
     GetInfo,
     GetTargets,
+    GetConfigSchema,
+    SetConfig {
+        values: &'a serde_json::Value,
+    },
     Send {
         target_id: &'a str,
         content: &'a str,
@@ -288,6 +292,48 @@ impl TargetProvider for SubprocessProvider {
         }
     }
 
+    async fn get_config_schema(
+        &self,
+    ) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
+        let response = self.call(&Request::GetConfigSchema)?;
+        let value: serde_json::Value = serde_json::from_str(&response).map_err(|e| {
+            format!(
+                "Plugin '{}' bad get_config_schema response: {e}",
+                self.config.name
+            )
+        })?;
+        if value.get("schema").is_some() {
+            Ok(Some(value))
+        } else {
+            Err(format!(
+                "Plugin '{}' get_config_schema: missing 'schema' field",
+                self.config.name
+            )
+            .into())
+        }
+    }
+
+    async fn set_config(
+        &self,
+        values: serde_json::Value,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let response = self.call(&Request::SetConfig { values: &values })?;
+        let parsed: SendResponse = serde_json::from_str(&response).map_err(|e| {
+            format!(
+                "Plugin '{}' bad set_config response: {e}",
+                self.config.name
+            )
+        })?;
+        if parsed.success {
+            Ok(())
+        } else {
+            Err(parsed
+                .error
+                .unwrap_or_else(|| "Unknown plugin error".to_string())
+                .into())
+        }
+    }
+
     fn is_enabled(&self, settings: &TargetProviderSettings) -> bool {
         settings
             .plugins
@@ -314,6 +360,22 @@ mod tests {
         let json = serde_json::to_string(&Request::GetTargets).unwrap();
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["command"], "get_targets");
+    }
+
+    #[test]
+    fn request_get_config_schema_serializes() {
+        let json = serde_json::to_string(&Request::GetConfigSchema).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["command"], "get_config_schema");
+    }
+
+    #[test]
+    fn request_set_config_serializes() {
+        let values = serde_json::json!({"key": "value"});
+        let json = serde_json::to_string(&Request::SetConfig { values: &values }).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["command"], "set_config");
+        assert_eq!(v["values"]["key"], "value");
     }
 
     #[test]
