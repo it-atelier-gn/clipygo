@@ -131,6 +131,14 @@ The command can be any executable or interpreter — compiled binaries, Node.js 
 
 Every request is a single line of JSON. Every response is a single line of JSON.
 
+| Command | Required | Description |
+|---|---|---|
+| `get_info` | Yes | Plugin name, version, description, author |
+| `get_targets` | Yes | List of targets the plugin provides |
+| `send` | Yes | Deliver clipboard content to a target |
+| `get_config_schema` | No | JSON Schema + current values for the settings UI |
+| `set_config` | No | Apply config values saved by the user |
+
 #### `get_info` — called on startup to verify the plugin
 
 ```json
@@ -171,6 +179,40 @@ Every request is a single line of JSON. Every response is a single line of JSON.
 ```json
 {"success":false,"error":"Something went wrong"}
 ```
+
+#### `get_config_schema` *(optional)* — return a JSON Schema and current values for the settings UI
+
+```json
+{"command":"get_config_schema"}
+```
+```json
+{
+  "schema": {
+    "type": "object",
+    "title": "My Plugin",
+    "properties": {
+      "api_key": { "type": "string", "title": "API Key", "description": "Your secret API key", "format": "password" },
+      "verbose": { "type": "boolean", "title": "Verbose Logging" },
+      "mode": { "type": "string", "title": "Mode", "enum": ["fast","slow"], "enumTitles": ["Fast","Slow"], "default": "fast" }
+    },
+    "required": ["api_key"]
+  },
+  "values": { "api_key": "", "verbose": false, "mode": "fast" }
+}
+```
+
+If this command is implemented, clipygo shows a **⚙ Configure** button next to the plugin in Settings. Supported field types: `string` (text input), `string` with `format: "password"` (password input), `string` with `enum` (select), `boolean` (toggle).
+
+#### `set_config` *(optional)* — apply configuration values saved by the user
+
+```json
+{"command":"set_config","values":{"api_key":"secret","verbose":true,"mode":"fast"}}
+```
+```json
+{"success":true}
+```
+
+The plugin is responsible for persisting the values (e.g. to its own config file).
 
 ### Error handling
 

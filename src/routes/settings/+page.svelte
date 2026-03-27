@@ -252,9 +252,80 @@
       showMessage(`Failed to toggle plugin: ${error}`, 'error');
     }
   }
+
+  // Config modal
+
+  interface SchemaProperty {
+    type: 'string' | 'boolean';
+    title?: string;
+    description?: string;
+    default?: unknown;
+    format?: string;
+    enum?: string[];
+    enumTitles?: string[];
+  }
+
+  interface ConfigSchema {
+    type: 'object';
+    title?: string;
+    properties: Record<string, SchemaProperty>;
+    required?: string[];
+  }
+
+  let configModalOpen = false;
+  let configPluginId = '';
+  let configPluginName = '';
+  let configLoading = false;
+  let configSchema: ConfigSchema | null = null;
+  let configValues: Record<string, unknown> = {};
+  let configSaving = false;
+  let configError = '';
+
+  async function openConfigModal(plugin: PluginProvider) {
+    configPluginId = plugin.id;
+    configPluginName = plugin.name;
+    configLoading = true;
+    configSchema = null;
+    configValues = {};
+    configSaving = false;
+    configError = '';
+    configModalOpen = true;
+    try {
+      const result: { schema: ConfigSchema; values: Record<string, unknown> } =
+        await invoke('get_plugin_config_schema', { pluginId: plugin.id });
+      configSchema = result.schema;
+      configValues = { ...result.values };
+    } catch (e) {
+      configError = `${e}`;
+    } finally {
+      configLoading = false;
+    }
+  }
+
+  function closeConfigModal() {
+    configModalOpen = false;
+  }
+
+  async function savePluginConfig() {
+    configSaving = true;
+    configError = '';
+    try {
+      await invoke('set_plugin_config', { pluginId: configPluginId, values: configValues });
+      closeConfigModal();
+      showMessage('Plugin configuration saved', 'success');
+    } catch (e) {
+      configError = `${e}`;
+    } finally {
+      configSaving = false;
+    }
+  }
+
+  function setConfigValue(key: string, value: unknown) {
+    configValues = { ...configValues, [key]: value };
+  }
 </script>
 
-<svelte:window on:keydown={(e) => e.key === 'Escape' && closeWindow()} />
+<svelte:window on:keydown={(e) => { if (e.key === 'Escape') { if (configModalOpen) closeConfigModal(); else closeWindow(); } }} />
 
 <div class="app" data-tauri-drag-region>
   <div class="container">
@@ -375,6 +446,7 @@
                         />
                         <label for="plugin-{plugin.id}" class="toggle-slider"></label>
                       </div>
+                      <button type="button" class="btn btn-secondary btn-sm" title="Configure plugin" on:click={() => openConfigModal(plugin)}>⚙</button>
                       <button type="button" class="btn btn-secondary btn-sm" on:click={() => startEdit(plugin)}>Edit</button>
                       <button type="button" class="btn btn-danger btn-sm" on:click={() => removePlugin(plugin.id)}>✕</button>
                     </div>
@@ -544,6 +616,89 @@
     {/if}
   </div>
 </div>
+
+{#if configModalOpen}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="modal-overlay" on:click|self={closeConfigModal}>
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title">{configPluginName}</h2>
+        <button class="btn btn-sm" on:click={closeConfigModal}>✕</button>
+      </div>
+      <div class="modal-body">
+        {#if configLoading}
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <span>Loading configuration...</span>
+          </div>
+        {:else if configError && !configSchema}
+          <p class="config-error">{configError}</p>
+        {:else if configSchema}
+          <div class="config-fields">
+            {#each Object.entries(configSchema.properties) as [key, prop]}
+              <div class="config-field">
+                <label class="config-label" for="cfg-{key}">
+                  {prop.title ?? key}{configSchema.required?.includes(key) ? ' *' : ''}
+                </label>
+                {#if prop.description}
+                  <p class="config-description">{prop.description}</p>
+                {/if}
+                {#if prop.type === 'boolean'}
+                  <div class="toggle-wrapper">
+                    <input
+                      type="checkbox"
+                      id="cfg-{key}"
+                      class="toggle-input"
+                      checked={!!configValues[key]}
+                      on:change={(e) => setConfigValue(key, e.currentTarget.checked)}
+                    />
+                    <label for="cfg-{key}" class="toggle-slider"></label>
+                  </div>
+                {:else if prop.enum}
+                  <select
+                    id="cfg-{key}"
+                    class="input"
+                    on:change={(e) => setConfigValue(key, e.currentTarget.value)}
+                  >
+                    {#each prop.enum as opt, i}
+                      <option value={opt} selected={String(configValues[key] ?? prop.default ?? '') === opt}>
+                        {prop.enumTitles?.[i] ?? opt}
+                      </option>
+                    {/each}
+                  </select>
+                {:else}
+                  <input
+                    id="cfg-{key}"
+                    class="input"
+                    type={prop.format === 'password' ? 'password' : 'text'}
+                    value={String(configValues[key] ?? '')}
+                    on:input={(e) => setConfigValue(key, e.currentTarget.value)}
+                  />
+                {/if}
+              </div>
+            {/each}
+          </div>
+          {#if configError}
+            <p class="config-error">{configError}</p>
+          {/if}
+        {/if}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" on:click={closeConfigModal} disabled={configSaving}>Cancel</button>
+        {#if configSchema}
+          <button class="btn btn-primary" on:click={savePluginConfig} disabled={configSaving}>
+            {#if configSaving}
+              <div class="spinner small"></div>
+              Saving...
+            {:else}
+              Save
+            {/if}
+          </button>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .title-shimmer {
@@ -912,5 +1067,90 @@
 
   .plugin-item--invalid {
     border-color: rgba(255, 80, 80, 0.4);
+  }
+
+  /* Config modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+
+  .modal {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
+    width: 90%;
+    max-width: 460px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-md) var(--space-lg);
+    border-bottom: 1px solid var(--border-primary);
+  }
+
+  .modal-title {
+    margin: 0;
+    font-family: var(--font-gaming);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+  }
+
+  .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-lg);
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-sm);
+    padding: var(--space-md) var(--space-lg);
+    border-top: 1px solid var(--border-primary);
+  }
+
+  .config-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+  }
+
+  .config-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .config-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .config-description {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .config-error {
+    color: #ff5050;
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    margin-top: var(--space-sm);
   }
 </style>
