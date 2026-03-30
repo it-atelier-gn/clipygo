@@ -53,6 +53,7 @@
   let newPlugin = { name: '', command: '' };
   let newPluginTestResult: boolean | null = null;
   let pluginPathValid: Record<string, boolean> = {};
+  let pluginLinks: Record<string, string> = {};
 
   // registry state
   let registry: Registry | null = null;
@@ -126,6 +127,7 @@
     try {
       settings = await invoke('get_settings');
       await checkPluginPaths();
+      fetchPluginLinks();
       loading = false;
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -143,6 +145,21 @@
       })
     );
     pluginPathValid = Object.fromEntries(results);
+  }
+
+  async function fetchPluginLinks() {
+    if (!settings) return;
+    const results = await Promise.all(
+      settings.target_providers.plugins.filter(p => p.enabled).map(async (p) => {
+        try {
+          const link: string | null = await invoke('get_plugin_link', { pluginId: p.id });
+          return [p.id, link ?? ''] as [string, string];
+        } catch {
+          return [p.id, ''] as [string, string];
+        }
+      })
+    );
+    pluginLinks = Object.fromEntries(results.filter(([, link]) => link));
   }
 
   async function saveSettings() {
@@ -263,6 +280,7 @@
     format?: string;
     enum?: string[];
     enumTitles?: string[];
+    visibleIf?: Record<string, string | string[]>;
   }
 
   interface ConfigSchema {
@@ -278,6 +296,7 @@
   let configLoading = false;
   let configSchema: ConfigSchema | null = null;
   let configValues: Record<string, unknown> = {};
+  let configInstructions = '';
   let configSaving = false;
   let configError = '';
 
@@ -287,14 +306,16 @@
     configLoading = true;
     configSchema = null;
     configValues = {};
+    configInstructions = '';
     configSaving = false;
     configError = '';
     configModalOpen = true;
     try {
-      const result: { schema: ConfigSchema; values: Record<string, unknown> } =
+      const result: { schema: ConfigSchema; values: Record<string, unknown>; instructions?: string } =
         await invoke('get_plugin_config_schema', { pluginId: plugin.id });
       configSchema = result.schema;
       configValues = { ...result.values };
+      configInstructions = result.instructions ?? '';
     } catch (e) {
       configError = `${e}`;
     } finally {
@@ -429,6 +450,9 @@
                     <div class="plugin-info">
                       <h3 class="plugin-name">
                         {plugin.name}
+                        {#if pluginLinks[plugin.id]}
+                          <a href={pluginLinks[plugin.id]} target="_blank" rel="noopener" class="plugin-link" title="Open plugin page">↗</a>
+                        {/if}
                         {#if pluginPathValid[plugin.id] === false}
                           <span class="badge-warning" title="Executable not found — check the command path">⚠ not found</span>
                         {/if}
@@ -634,8 +658,16 @@
         {:else if configError && !configSchema}
           <p class="config-error">{configError}</p>
         {:else if configSchema}
+          {#if configInstructions}
+            <div class="config-instructions">{configInstructions}</div>
+          {/if}
           <div class="config-fields">
             {#each Object.entries(configSchema.properties) as [key, prop]}
+              {@const visible = !prop.visibleIf || Object.entries(prop.visibleIf).every(([field, expected]) => {
+                const val = String(configValues[field] ?? '');
+                return Array.isArray(expected) ? expected.includes(val) : val === expected;
+              })}
+              {#if visible}
               <div class="config-field">
                 <label class="config-label" for="cfg-{key}">
                   {prop.title ?? key}{configSchema.required?.includes(key) ? ' *' : ''}
@@ -676,6 +708,7 @@
                   />
                 {/if}
               </div>
+              {/if}
             {/each}
           </div>
           {#if configError}
@@ -841,6 +874,28 @@
     font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-primary);
+  }
+
+  .plugin-link {
+    font-size: 0.75rem;
+    color: var(--accent-primary);
+    text-decoration: none;
+    margin-left: 4px;
+  }
+
+  .plugin-link:hover {
+    text-decoration: underline;
+  }
+
+  .config-instructions {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: pre-line;
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    background: var(--bg-tertiary, rgba(255,255,255,0.03));
+    border-radius: 6px;
+    border-left: 3px solid var(--accent-primary);
   }
 
   .plugin-path {

@@ -133,10 +133,10 @@ Every request is a single line of JSON. Every response is a single line of JSON.
 
 | Command | Required | Description |
 |---|---|---|
-| `get_info` | Yes | Plugin name, version, description, author |
+| `get_info` | Yes | Plugin name, version, description, author, link |
 | `get_targets` | Yes | List of targets the plugin provides |
 | `send` | Yes | Deliver clipboard content to a target |
-| `get_config_schema` | No | JSON Schema + current values for the settings UI |
+| `get_config_schema` | No | JSON Schema + current values + instructions for the settings UI |
 | `set_config` | No | Apply config values saved by the user |
 
 #### `get_info` — called on startup to verify the plugin
@@ -145,8 +145,10 @@ Every request is a single line of JSON. Every response is a single line of JSON.
 {"command":"get_info"}
 ```
 ```json
-{"name":"My Plugin","version":"1.0.0","description":"...","author":"..."}
+{"name":"My Plugin","version":"1.0.0","description":"...","author":"...","link":"https://github.com/..."}
 ```
+
+The optional `link` field provides a URL shown next to the plugin name in settings (e.g. repo page, docs).
 
 #### `get_targets` — returns all available targets for this plugin
 
@@ -187,21 +189,29 @@ Every request is a single line of JSON. Every response is a single line of JSON.
 ```
 ```json
 {
+  "instructions": "Setup instructions shown above the config fields (plain text with newlines).",
   "schema": {
     "type": "object",
     "title": "My Plugin",
     "properties": {
       "api_key": { "type": "string", "title": "API Key", "description": "Your secret API key", "format": "password" },
       "verbose": { "type": "boolean", "title": "Verbose Logging" },
-      "mode": { "type": "string", "title": "Mode", "enum": ["fast","slow"], "enumTitles": ["Fast","Slow"], "default": "fast" }
+      "mode": { "type": "string", "title": "Mode", "enum": ["fast","slow"], "enumTitles": ["Fast","Slow"], "default": "fast" },
+      "fast_option": { "type": "string", "title": "Fast Option", "visibleIf": { "mode": "fast" } }
     },
     "required": ["api_key"]
   },
-  "values": { "api_key": "", "verbose": false, "mode": "fast" }
+  "values": { "api_key": "", "verbose": false, "mode": "fast", "fast_option": "" }
 }
 ```
 
-If this command is implemented, clipygo shows a **⚙ Configure** button next to the plugin in Settings. Supported field types: `string` (text input), `string` with `format: "password"` (password input), `string` with `enum` (select), `boolean` (toggle).
+If this command is implemented, clipygo shows a **⚙ Configure** button next to the plugin in Settings.
+
+Supported field types: `string` (text input), `string` with `format: "password"` (password input), `string` with `enum` (select), `boolean` (toggle).
+
+Optional field features:
+- `instructions` — plain text shown above the config fields (supports newlines)
+- `visibleIf` — conditionally show a field based on another field's value: `"visibleIf": {"field": "value"}` or `"visibleIf": {"field": ["a","b"]}` for multiple values
 
 #### `set_config` *(optional)* — apply configuration values saved by the user
 
@@ -232,7 +242,7 @@ rl.on('line', (line) => {
   const req = JSON.parse(line);
 
   if (req.command === 'get_info') {
-    respond({ name: 'My Plugin', version: '1.0.0', description: '...', author: '...' });
+    respond({ name: 'My Plugin', version: '1.0.0', description: '...', author: '...', link: 'https://...' });
 
   } else if (req.command === 'get_targets') {
     respond({
@@ -266,7 +276,7 @@ for line in sys.stdin:
     req = json.loads(line.strip())
 
     if req['command'] == 'get_info':
-        print(json.dumps({'name': 'My Plugin', 'version': '1.0.0', 'description': '...', 'author': '...'}), flush=True)
+        print(json.dumps({'name': 'My Plugin', 'version': '1.0.0', 'description': '...', 'author': '...', 'link': 'https://...'}), flush=True)
 
     elif req['command'] == 'get_targets':
         print(json.dumps({'targets': [{'id': 'my-target', 'provider': 'My Plugin', 'formats': ['text'], 'title': 'My Target', 'description': '...', 'image': ''}]}), flush=True)
