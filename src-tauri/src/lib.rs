@@ -40,7 +40,8 @@ pub fn run() {
             targets::get_targets,
             targets::send_to_target,
             targets::get_plugin_config_schema,
-            targets::set_plugin_config
+            targets::set_plugin_config,
+            targets::get_plugin_link
         ])
         .setup(|app| {
             trayicon::setup(app);

@@ -33,6 +33,11 @@ pub trait TargetProvider: Send + Sync {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
     fn is_enabled(&self, settings: &TargetProviderSettings) -> bool;
 
+    /// Returns the plugin's link URL if provided via get_info.
+    fn get_link(&self) -> Option<String> {
+        None
+    }
+
     /// Returns `Some({schema, values})` if this provider supports configuration, `None` otherwise.
     async fn get_config_schema(
         &self,
@@ -238,6 +243,20 @@ pub async fn set_plugin_config(
         .ok_or_else(|| format!("Plugin '{plugin_id}' not found"))?;
 
     provider.set_config(values).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_plugin_link(
+    coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
+    plugin_id: String,
+) -> Result<Option<String>, String> {
+    let provider = coordinator
+        .lock()
+        .map_err(|e| format!("Failed to lock coordinator: {e}"))?
+        .get_provider_by_id(&plugin_id)
+        .ok_or_else(|| format!("Plugin '{plugin_id}' not found"))?;
+
+    Ok(provider.get_link())
 }
 
 #[tauri::command]

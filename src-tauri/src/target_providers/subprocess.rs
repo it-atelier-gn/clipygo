@@ -22,6 +22,7 @@ struct ProviderState {
     process: Option<ProcessHandle>,
     failure_count: u32,
     errored: bool,
+    info: Option<InfoResponse>,
 }
 
 pub struct SubprocessProvider {
@@ -45,6 +46,21 @@ enum Request<'a> {
         content: &'a str,
         format: &'a str,
     },
+}
+
+#[derive(Deserialize, Clone, Default)]
+#[allow(dead_code)]
+struct InfoResponse {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    version: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    author: String,
+    #[serde(default)]
+    link: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -101,6 +117,7 @@ impl SubprocessProvider {
                 process: None,
                 failure_count: 0,
                 errored: false,
+                info: None,
             }),
         }
     }
@@ -161,10 +178,15 @@ impl SubprocessProvider {
                 match self.spawn() {
                     Ok(handle) => {
                         state.process = Some(handle);
-                        // Health check on fresh spawn
+                        // Health check on fresh spawn — also captures plugin info
                         if let Err(e) =
                             Self::send_recv(state.process.as_mut().unwrap(), &Request::GetInfo)
-                                .map(|_| ())
+                                .and_then(|resp| {
+                                    let info: InfoResponse = serde_json::from_str(&resp)
+                                        .map_err(|e| format!("Bad get_info response: {e}"))?;
+                                    state.info = Some(info);
+                                    Ok(())
+                                })
                         {
                             println!("Plugin '{}' get_info failed: {}", self.config.name, e);
                             state.process = None;
@@ -260,6 +282,13 @@ impl Drop for SubprocessProvider {
 impl TargetProvider for SubprocessProvider {
     fn name(&self) -> &str {
         &self.config.name
+    }
+
+    fn get_link(&self) -> Option<String> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|s| s.info.as_ref().and_then(|i| i.link.clone()))
     }
 
     async fn get_targets(&self) -> Result<Vec<Target>, Box<dyn std::error::Error + Send + Sync>> {
