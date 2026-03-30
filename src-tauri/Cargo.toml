@@ -27,7 +27,7 @@ tauri-plugin-store = "~2.4"
 regex = "1.11.1"
 tmuntaner-keyring = "0.1.0-alpha.15"
 async-trait = "0.1"
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.23", features = ["v4"] }
 base64 = "0.22"
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json"] }
 sha2 = "0.10"
