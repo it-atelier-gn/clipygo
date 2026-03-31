@@ -20,6 +20,7 @@ Clipboard monitor that watches for specific content patterns and lets you route 
 - 📦 **Plugin registry** — browse and install published plugins from the registry with SHA256-verified downloads
 - 🚀 **System tray** — runs silently in the background, always ready
 - 🔄 **Autostart** — optionally launch on system boot
+- 🩺 **Plugin health monitoring** — real-time status indicators in settings, warning banner in popup when a plugin fails
 - 🪟 **Frameless UI** — compact, keyboard-driven popup with a cyberpunk aesthetic
 
 ---
@@ -226,7 +227,7 @@ The plugin is responsible for persisting the values (e.g. to its own config file
 
 ### Error handling
 
-clipygo auto-restarts a crashed plugin on the next request. After **3 consecutive failures** the plugin is marked as errored and paused — remove and re-add it in settings to reset.
+clipygo auto-restarts a crashed plugin on the next request. After **3 consecutive failures** the plugin is marked as errored and paused. The settings page shows a health indicator per plugin (green `ok` / red `error` with details on hover), and the popup shows a warning banner when any plugin fails to load targets.
 
 ### Demo plugin
 

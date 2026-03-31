@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::settings::{PluginProvider, TargetProviderSettings};
-use crate::targets::{SendPayload, Target, TargetProvider};
+use crate::targets::{PluginStatus, SendPayload, Target, TargetProvider};
 
 const MAX_FAILURES: u32 = 3;
 
@@ -22,6 +22,7 @@ struct ProviderState {
     process: Option<ProcessHandle>,
     failure_count: u32,
     errored: bool,
+    last_error: Option<String>,
     info: Option<InfoResponse>,
 }
 
@@ -117,6 +118,7 @@ impl SubprocessProvider {
                 process: None,
                 failure_count: 0,
                 errored: false,
+                last_error: None,
                 info: None,
             }),
         }
@@ -166,10 +168,10 @@ impl SubprocessProvider {
             .map_err(|_| "Plugin state lock poisoned".to_string())?;
 
         if state.errored {
-            return Err(format!(
-                "Plugin '{}' is in error state — remove and re-add to reset",
-                self.config.name
-            ));
+            return Err(state
+                .last_error
+                .clone()
+                .unwrap_or_else(|| format!("Plugin '{}' is in error state", self.config.name)));
         }
 
         // Up to 2 attempts: once with existing process, once after restart
@@ -188,15 +190,17 @@ impl SubprocessProvider {
                                     Ok(())
                                 })
                         {
-                            println!("Plugin '{}' get_info failed: {}", self.config.name, e);
+                            let msg = format!(
+                                "Plugin '{}' failed health check: {e}",
+                                self.config.name
+                            );
+                            println!("{msg}");
                             state.process = None;
                             state.failure_count += 1;
+                            state.last_error = Some(msg.clone());
                             if state.failure_count >= MAX_FAILURES {
                                 state.errored = true;
-                                return Err(format!(
-                                    "Plugin '{}' failed health check {} times, marking errored",
-                                    self.config.name, MAX_FAILURES
-                                ));
+                                return Err(msg);
                             }
                             continue;
                         }
@@ -205,6 +209,7 @@ impl SubprocessProvider {
                     }
                     Err(e) => {
                         state.failure_count += 1;
+                        state.last_error = Some(e.clone());
                         if state.failure_count >= MAX_FAILURES {
                             state.errored = true;
                         }
@@ -219,23 +224,21 @@ impl SubprocessProvider {
                     return Ok(response);
                 }
                 Err(e) => {
-                    println!(
-                        "Plugin '{}' communication error (attempt {}): {}",
+                    let msg = format!(
+                        "Plugin '{}' communication error (attempt {}): {e}",
                         self.config.name,
                         attempt + 1,
-                        e
                     );
+                    println!("{msg}");
                     // Kill the dead process
                     if let Some(mut handle) = state.process.take() {
                         let _ = handle.child.kill();
                     }
                     state.failure_count += 1;
+                    state.last_error = Some(msg.clone());
                     if state.failure_count >= MAX_FAILURES {
                         state.errored = true;
-                        return Err(format!(
-                            "Plugin '{}' failed {} times, marking errored: {}",
-                            self.config.name, MAX_FAILURES, e
-                        ));
+                        return Err(msg);
                     }
                     // Loop will retry with a fresh spawn
                 }
@@ -289,6 +292,16 @@ impl TargetProvider for SubprocessProvider {
             .lock()
             .ok()
             .and_then(|s| s.info.as_ref().and_then(|i| i.link.clone()))
+    }
+
+    fn get_status(&self) -> PluginStatus {
+        self.state
+            .lock()
+            .map(|s| PluginStatus {
+                healthy: !s.errored,
+                error: s.last_error.clone(),
+            })
+            .unwrap_or_default()
     }
 
     async fn get_targets(&self) -> Result<Vec<Target>, Box<dyn std::error::Error + Send + Sync>> {
