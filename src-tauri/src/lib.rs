@@ -37,11 +37,13 @@ pub fn run() {
             settings::check_plugin_path,
             settings::fetch_registry,
             settings::install_registry_plugin,
+            settings::update_registry_plugin,
             targets::get_targets,
             targets::send_to_target,
             targets::get_plugin_config_schema,
             targets::set_plugin_config,
-            targets::get_plugin_link
+            targets::get_plugin_link,
+            targets::get_plugin_statuses
         ])
         .setup(|app| {
             trayicon::setup(app);

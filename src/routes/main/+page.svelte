@@ -21,11 +21,22 @@
     format: string;
   }
 
+  interface PluginError {
+    plugin_name: string;
+    message: string;
+  }
+
+  interface GetTargetsResult {
+    targets: Target[];
+    errors: PluginError[];
+  }
+
   let unlistenWindowEvents: UnlistenFn;
   let unlistenClipboard: UnlistenFn;
   let clipboardContent = "";
   let clipboardImage = ""; // base64 PNG when clipboard has an image
   let targets: Target[] = [];
+  let pluginErrors: PluginError[] = [];
   let loadingTargets = false;
   let sendingTo: string | null = null;
   let message = "";
@@ -101,7 +112,9 @@
   async function loadTargets() {
     loadingTargets = true;
     try {
-      targets = await invoke('get_targets');
+      const result: GetTargetsResult = await invoke('get_targets');
+      targets = result.targets;
+      pluginErrors = result.errors;
       selectedTargetIndex = 0; // Reset selection
     } catch (error) {
       console.error('Failed to load targets:', error);
@@ -217,6 +230,15 @@
   {#if message}
     <div class="message message-{messageType}" data-tauri-drag-region>
       {message}
+    </div>
+  {/if}
+
+  <!-- Plugin error warnings -->
+  {#if pluginErrors.length > 0}
+    <div class="plugin-errors" data-tauri-drag-region>
+      {#each pluginErrors as err}
+        <span class="plugin-error-item" title={err.message}>{err.plugin_name} failed</span>
+      {/each}
     </div>
   {/if}
 
@@ -357,6 +379,24 @@
 </div>
 
 <style>
+  .plugin-errors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    padding: var(--space-xs) var(--space-md);
+    background: rgba(255, 80, 80, 0.1);
+    border-bottom: 1px solid rgba(255, 80, 80, 0.3);
+  }
+
+  .plugin-error-item {
+    font-size: 0.7rem;
+    font-family: var(--font-gaming);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #ff5050;
+    cursor: default;
+  }
+
   .content {
     flex: 1;
     padding: var(--space-md);

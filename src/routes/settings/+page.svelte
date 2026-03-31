@@ -12,6 +12,8 @@
     name: string;
     command: string;
     enabled: boolean;
+    registry_id?: string;
+    version?: string;
   }
 
   interface AppSettings {
@@ -54,6 +56,7 @@
   let newPluginTestResult: boolean | null = null;
   let pluginPathValid: Record<string, boolean> = {};
   let pluginLinks: Record<string, string> = {};
+  let pluginStatuses: Record<string, { healthy: boolean; error: string | null }> = {};
 
   // registry state
   let registry: Registry | null = null;
@@ -104,6 +107,37 @@
     return settings?.target_providers.plugins.some(p => p.name === plugin.name) ?? false;
   }
 
+  function getInstalledVersion(plugin: RegistryPlugin): string | undefined {
+    return settings?.target_providers.plugins.find(p => p.registry_id === plugin.id)?.version ?? undefined;
+  }
+
+  function isOutdated(plugin: RegistryPlugin): boolean {
+    const installed = getInstalledVersion(plugin);
+    return installed !== undefined && installed !== plugin.version;
+  }
+
+  let updatingId: string | null = null;
+  let updateErrors: Record<string, string> = {};
+
+  async function updatePlugin(plugin: RegistryPlugin) {
+    const platform = detectPlatform();
+    if (!plugin.platforms[platform]) {
+      updateErrors = { ...updateErrors, [plugin.id]: `No binary available for platform '${platform}'` };
+      return;
+    }
+    updatingId = plugin.id;
+    updateErrors = { ...updateErrors, [plugin.id]: '' };
+    try {
+      await invoke('update_registry_plugin', { plugin, platformKey: platform });
+      await loadSettings();
+      showMessage(`${plugin.name} updated to v${plugin.version}`, 'success');
+    } catch (e) {
+      updateErrors = { ...updateErrors, [plugin.id]: `${e}` };
+    } finally {
+      updatingId = null;
+    }
+  }
+
   // inline editing state
   let editingId: string | null = null;
   let editDraft = { name: '', command: '' };
@@ -128,6 +162,7 @@
       settings = await invoke('get_settings');
       await checkPluginPaths();
       fetchPluginLinks();
+      fetchPluginStatuses();
       loading = false;
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -160,6 +195,18 @@
       })
     );
     pluginLinks = Object.fromEntries(results.filter(([, link]) => link));
+  }
+
+  async function fetchPluginStatuses() {
+    try {
+      const entries: { id: string; name: string; healthy: boolean; error: string | null }[] =
+        await invoke('get_plugin_statuses');
+      pluginStatuses = Object.fromEntries(
+        entries.map(e => [e.id, { healthy: e.healthy, error: e.error }])
+      );
+    } catch {
+      // non-critical — statuses just won't show
+    }
   }
 
   async function saveSettings() {
@@ -446,15 +493,22 @@
                   </div>
                 {:else}
                   <!-- Read mode -->
-                  <div class="plugin-item" class:plugin-item--invalid={pluginPathValid[plugin.id] === false}>
+                  <div class="plugin-item" class:plugin-item--invalid={pluginPathValid[plugin.id] === false || (pluginStatuses[plugin.id] && !pluginStatuses[plugin.id].healthy)}>
                     <div class="plugin-info">
                       <h3 class="plugin-name">
                         {plugin.name}
+                        {#if plugin.version}
+                          <span class="badge-version">v{plugin.version}</span>
+                        {/if}
                         {#if pluginLinks[plugin.id]}
                           <a href={pluginLinks[plugin.id]} target="_blank" rel="noopener" class="plugin-link" title="Open plugin page">↗</a>
                         {/if}
                         {#if pluginPathValid[plugin.id] === false}
                           <span class="badge-warning" title="Executable not found — check the command path">⚠ not found</span>
+                        {:else if pluginStatuses[plugin.id] && !pluginStatuses[plugin.id].healthy}
+                          <span class="badge-warning" title={pluginStatuses[plugin.id].error ?? 'Plugin is in error state'}>⚠ error</span>
+                        {:else if pluginStatuses[plugin.id]?.healthy}
+                          <span class="badge-healthy" title="Plugin is running">● ok</span>
                         {/if}
                       </h3>
                       <p class="plugin-path text-secondary">{plugin.command}</p>
@@ -538,7 +592,17 @@
                       <p class="registry-author text-secondary">by {rp.author}</p>
                     </div>
                     <div class="plugin-actions">
-                      {#if isInstalled(rp)}
+                      {#if isOutdated(rp)}
+                        <button
+                          type="button"
+                          class="badge-update"
+                          disabled={updatingId === rp.id}
+                          on:click={() => updatePlugin(rp)}
+                          title="Click to update"
+                        >
+                          {updatingId === rp.id ? '...' : `v${getInstalledVersion(rp)} → v${rp.version}`}
+                        </button>
+                      {:else if isInstalled(rp)}
                         <span class="badge-installed">installed</span>
                       {:else}
                         <button
@@ -554,6 +618,9 @@
                   </div>
                   {#if installErrors[rp.id]}
                     <p class="install-error">{installErrors[rp.id]}</p>
+                  {/if}
+                  {#if updateErrors[rp.id]}
+                    <p class="install-error">{updateErrors[rp.id]}</p>
                   {/if}
                 {/each}
               </div>
@@ -1089,6 +1156,30 @@
     color: #00ff88;
   }
 
+  .badge-update {
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: rgba(255, 165, 0, 0.15);
+    border: 1px solid rgba(255, 165, 0, 0.5);
+    color: #ffa500;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+  }
+
+  .badge-update:hover:not(:disabled) {
+    background: rgba(255, 165, 0, 0.25);
+    border-color: #ffa500;
+    box-shadow: 0 0 8px rgba(255, 165, 0, 0.3);
+  }
+
+  .badge-update:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
   .badge-coming-soon {
     display: inline-block;
     font-size: 0.65rem;
@@ -1118,6 +1209,20 @@
     vertical-align: middle;
     margin-left: 6px;
     cursor: help;
+  }
+
+  .badge-healthy {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(0, 255, 136, 0.15);
+    border: 1px solid rgba(0, 255, 136, 0.4);
+    color: #00ff88;
+    vertical-align: middle;
+    margin-left: 6px;
   }
 
   .plugin-item--invalid {

@@ -17,6 +17,10 @@ pub struct PluginProvider {
     pub name: String,
     pub command: String, // full command line e.g. "node plugin.js" or "C:\plugins\demo.exe"
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -197,6 +201,8 @@ pub fn add_plugin(app_handle: AppHandle, command: String, name: String) -> Resul
         name,
         command,
         enabled: true,
+        registry_id: None,
+        version: None,
     });
 
     manager
@@ -476,6 +482,8 @@ pub async fn install_registry_plugin(
         name: plugin.name.clone(),
         command,
         enabled: true,
+        registry_id: Some(plugin.id.clone()),
+        version: Some(plugin.version.clone()),
     };
     if let Some(i) = existing {
         settings.target_providers.plugins[i] = entry;
@@ -487,6 +495,103 @@ pub async fn install_registry_plugin(
         .update_settings(settings)
         .map_err(|e| e.to_string())?;
     let _ = app_handle.emit("settings-changed", ());
+    Ok(())
+}
+
+/// Update an already-installed registry plugin to a newer version.
+#[tauri::command]
+pub async fn update_registry_plugin(
+    app_handle: AppHandle,
+    plugin: RegistryPlugin,
+    platform_key: String,
+) -> Result<(), String> {
+    let platform = plugin
+        .platforms
+        .get(&platform_key)
+        .ok_or_else(|| format!("No binary for platform '{platform_key}'"))?;
+
+    // Find the installed plugin by registry_id
+    let mut manager = SettingsCoordinator::from_handle(&app_handle).map_err(|e| e.to_string())?;
+    let mut settings = manager.get_settings().clone();
+    let idx = settings
+        .target_providers
+        .plugins
+        .iter()
+        .position(|p| p.registry_id.as_deref() == Some(&plugin.id))
+        .ok_or_else(|| format!("Plugin '{}' is not installed from the registry", plugin.id))?;
+
+    let dest: PathBuf = PathBuf::from(&settings.target_providers.plugins[idx].command);
+
+    // Download
+    println!(
+        "[update] plugin='{}' platform='{}' url='{}'",
+        plugin.id, platform_key, platform.url
+    );
+
+    let response = reqwest::get(&platform.url)
+        .await
+        .map_err(|e| format!("Download failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Download failed: HTTP {} — URL: {}",
+            response.status(),
+            platform.url
+        ));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read download: {e}"))?;
+
+    // Verify SHA256
+    if !platform.sha256.is_empty() {
+        use std::fmt::Write as FmtWrite;
+        let digest = {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            let result = hasher.finalize();
+            let mut hex = String::with_capacity(64);
+            for byte in result {
+                let _ = write!(hex, "{byte:02x}");
+            }
+            hex
+        };
+        if digest != platform.sha256 {
+            return Err(format!(
+                "SHA256 mismatch for '{}': expected {}, got {}",
+                plugin.id, platform.sha256, digest
+            ));
+        }
+    }
+
+    // Overwrite binary
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Failed to write plugin binary: {e}"))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&dest)
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&dest, perms).map_err(|e| e.to_string())?;
+    }
+
+    // Update version in settings
+    settings.target_providers.plugins[idx].version = Some(plugin.version.clone());
+
+    manager
+        .update_settings(settings)
+        .map_err(|e| e.to_string())?;
+    let _ = app_handle.emit("settings-changed", ());
+
+    println!(
+        "[update] plugin '{}' updated to v{}",
+        plugin.id, plugin.version
+    );
     Ok(())
 }
 
@@ -615,6 +720,8 @@ mod tests {
             name: "My Plugin".to_string(),
             command: r#""C:\plugins\foo.exe" --verbose"#.to_string(),
             enabled: true,
+            registry_id: None,
+            version: None,
         };
         let json = serde_json::to_string(&plugin).expect("serialize");
         let restored: PluginProvider = serde_json::from_str(&json).expect("deserialize");

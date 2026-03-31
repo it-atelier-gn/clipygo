@@ -22,6 +22,32 @@ pub struct SendPayload {
     pub format: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PluginStatus {
+    pub healthy: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginStatusEntry {
+    pub id: String,
+    pub name: String,
+    pub healthy: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginError {
+    pub plugin_name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetTargetsResult {
+    pub targets: Vec<Target>,
+    pub errors: Vec<PluginError>,
+}
+
 #[async_trait]
 pub trait TargetProvider: Send + Sync {
     fn name(&self) -> &str;
@@ -36,6 +62,14 @@ pub trait TargetProvider: Send + Sync {
     /// Returns the plugin's link URL if provided via get_info.
     fn get_link(&self) -> Option<String> {
         None
+    }
+
+    /// Returns the plugin's current health status.
+    fn get_status(&self) -> PluginStatus {
+        PluginStatus {
+            healthy: true,
+            error: None,
+        }
     }
 
     /// Returns `Some({schema, values})` if this provider supports configuration, `None` otherwise.
@@ -108,6 +142,25 @@ impl TargetProviderCoordinator {
     pub fn snapshot(&self) -> (Vec<Arc<dyn TargetProvider>>, AppSettings) {
         let providers = self.providers.values().cloned().collect();
         (providers, self.settings.clone())
+    }
+
+    /// Returns the health status of all registered plugins.
+    pub fn get_plugin_statuses(&self) -> Vec<PluginStatusEntry> {
+        self.settings
+            .target_providers
+            .plugins
+            .iter()
+            .filter_map(|p| {
+                let provider = self.providers.get(&p.name)?;
+                let status = provider.get_status();
+                Some(PluginStatusEntry {
+                    id: p.id.clone(),
+                    name: p.name.clone(),
+                    healthy: status.healthy,
+                    error: status.error,
+                })
+            })
+            .collect()
     }
 
     /// Looks up a provider by plugin id (from settings), returning a cloned Arc.
@@ -191,7 +244,7 @@ mod tests {
 #[tauri::command]
 pub async fn get_targets(
     coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
-) -> Result<Vec<Target>, String> {
+) -> Result<GetTargetsResult, String> {
     let (providers, settings) = coordinator
         .lock()
         .map_err(|e| format!("Failed to lock coordinator: {e}"))?
@@ -199,17 +252,28 @@ pub async fn get_targets(
     // MutexGuard is dropped here — safe to await below
 
     let mut all_targets = Vec::new();
+    let mut errors = Vec::new();
     for provider in &providers {
         if provider.is_enabled(&settings.target_providers) {
             match provider.get_targets().await {
                 Ok(mut targets) => all_targets.append(&mut targets),
-                Err(e) => println!("Failed to get targets from '{}': {}", provider.name(), e),
+                Err(e) => {
+                    let msg = format!("{e}");
+                    println!("Failed to get targets from '{}': {}", provider.name(), msg);
+                    errors.push(PluginError {
+                        plugin_name: provider.name().to_string(),
+                        message: msg,
+                    });
+                }
             }
         }
     }
 
     println!("Total targets retrieved: {}", all_targets.len());
-    Ok(all_targets)
+    Ok(GetTargetsResult {
+        targets: all_targets,
+        errors,
+    })
 }
 
 #[tauri::command]
@@ -257,6 +321,16 @@ pub fn get_plugin_link(
         .ok_or_else(|| format!("Plugin '{plugin_id}' not found"))?;
 
     Ok(provider.get_link())
+}
+
+#[tauri::command]
+pub fn get_plugin_statuses(
+    coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
+) -> Result<Vec<PluginStatusEntry>, String> {
+    Ok(coordinator
+        .lock()
+        .map_err(|e| format!("Failed to lock coordinator: {e}"))?
+        .get_plugin_statuses())
 }
 
 #[tauri::command]
