@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use tauri::AppHandle;
+
 use crate::settings::{AppSettings, TargetProviderSettings};
 use crate::target_providers::subprocess::create_subprocess_providers;
 
@@ -91,16 +93,20 @@ pub trait TargetProvider: Send + Sync {
 pub struct TargetProviderCoordinator {
     providers: HashMap<String, Arc<dyn TargetProvider>>,
     settings: AppSettings,
+    app_handle: AppHandle,
 }
 
 impl TargetProviderCoordinator {
-    pub fn new(settings: AppSettings) -> Self {
+    pub fn new(settings: AppSettings, app_handle: AppHandle) -> Self {
         let mut coordinator = Self {
             providers: HashMap::new(),
             settings: settings.clone(),
+            app_handle,
         };
 
-        for provider in create_subprocess_providers(&settings.target_providers) {
+        for provider in
+            create_subprocess_providers(&settings.target_providers, &coordinator.app_handle)
+        {
             coordinator.register_provider(provider);
         }
 
@@ -124,7 +130,7 @@ impl TargetProviderCoordinator {
         });
 
         // Re-register subprocess providers
-        for provider in create_subprocess_providers(&settings.target_providers) {
+        for provider in create_subprocess_providers(&settings.target_providers, &self.app_handle) {
             self.register_provider(provider);
         }
 

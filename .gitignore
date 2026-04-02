@@ -1,6 +1,7 @@
 .vscode
 .history
 .DS_Store
+PROJECT.md
 node_modules
 /build
 /.svelte-kit

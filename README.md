@@ -20,6 +20,8 @@ Clipboard monitor that watches for specific content patterns and lets you route 
 - 📦 **Plugin registry** — browse and install published plugins from the registry with SHA256-verified downloads
 - 🚀 **System tray** — runs silently in the background, always ready
 - 🔄 **Autostart** — optionally launch on system boot
+- 🔒 **Encrypted clipboard relay** — share clipboard content with other users via E2E encryption through a zero-knowledge relay server ([relay plugin](https://github.com/it-atelier-gn/clipygo-plugin-relay))
+- 🔔 **Plugin notifications** — plugins can push real-time events and notifications without polling
 - 🩺 **Plugin health monitoring** — real-time status indicators in settings, warning banner in popup when a plugin fails
 - 🪟 **Frameless UI** — compact, keyboard-driven popup with a cyberpunk aesthetic
 
@@ -208,11 +210,12 @@ The optional `link` field provides a URL shown next to the plugin name in settin
 
 If this command is implemented, clipygo shows a **⚙ Configure** button next to the plugin in Settings.
 
-Supported field types: `string` (text input), `string` with `format: "password"` (password input), `string` with `enum` (select), `boolean` (toggle).
+Supported field types: `string` (text input), `string` with `format: "password"` (password input with visibility toggle), `string` with `enum` (select), `boolean` (toggle).
 
 Optional field features:
 - `instructions` — plain text shown above the config fields (supports newlines)
 - `visibleIf` — conditionally show a field based on another field's value: `"visibleIf": {"field": "value"}` or `"visibleIf": {"field": ["a","b"]}` for multiple values
+- `readOnly` — display-only field that cannot be edited by the user (excluded from `set_config` values)
 
 #### `set_config` *(optional)* — apply configuration values saved by the user
 
@@ -224,6 +227,20 @@ Optional field features:
 ```
 
 The plugin is responsible for persisting the values (e.g. to its own config file).
+
+### Plugin-initiated events
+
+Plugins can also push unsolicited events to clipygo by writing JSON lines to stdout at any time. Lines with a top-level `"event"` field are treated as events (not responses) and forwarded to clipygo's event system.
+
+```json
+{"event":"incoming_message","data":{"from_name":"Alice","from_id":"abc123","content":"Hello!","format":"text","timestamp":1711900000}}
+```
+
+```json
+{"event":"connection_status","data":{"status":"connected"}}
+```
+
+When an `incoming_message` event is received, clipygo shows a notification window with the sender name, content preview, and Copy/Dismiss actions.
 
 ### Error handling
 
@@ -304,16 +321,17 @@ clipygo/
 ├── src/                        # SvelteKit frontend
 │   ├── routes/
 │   │   ├── main/               # Popup window (clipboard content + target list)
+│   │   ├── notification/       # Plugin event notification window
 │   │   └── settings/           # Settings window
 │   └── app.css                 # Global styles
 └── src-tauri/                  # Tauri / Rust backend
     └── src/
-        ├── lib.rs              # App setup, clipboard monitor, global shortcut
+        ├── lib.rs              # App setup, clipboard monitor, global shortcut, notification window
         ├── targets.rs          # TargetProvider trait + coordinator
         ├── settings.rs         # Settings model + persistence
         ├── trayicon.rs         # System tray setup
         └── target_providers/
-            └── subprocess.rs   # Persistent subprocess plugin runner
+            └── subprocess.rs   # Persistent subprocess plugin runner (background reader + event dispatch)
 ```
 
 ### Key design decisions

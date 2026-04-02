@@ -3,6 +3,7 @@ name = "clipygo"
 version = "0.0.0-dev"
 description = "Clipboard-to-X"
 authors = ["Georg Nelles"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

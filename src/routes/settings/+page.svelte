@@ -328,6 +328,7 @@
     enum?: string[];
     enumTitles?: string[];
     visibleIf?: Record<string, string | string[]>;
+    readOnly?: boolean;
   }
 
   interface ConfigSchema {
@@ -346,6 +347,7 @@
   let configInstructions = '';
   let configSaving = false;
   let configError = '';
+  let visiblePasswords: Record<string, boolean> = {};
 
   async function openConfigModal(plugin: PluginProvider) {
     configPluginId = plugin.id;
@@ -356,6 +358,7 @@
     configInstructions = '';
     configSaving = false;
     configError = '';
+    visiblePasswords = {};
     configModalOpen = true;
     try {
       const result: { schema: ConfigSchema; values: Record<string, unknown>; instructions?: string } =
@@ -378,7 +381,10 @@
     configSaving = true;
     configError = '';
     try {
-      await invoke('set_plugin_config', { pluginId: configPluginId, values: configValues });
+      const writableValues = Object.fromEntries(
+        Object.entries(configValues).filter(([k]) => !configSchema?.properties[k]?.readOnly)
+      );
+      await invoke('set_plugin_config', { pluginId: configPluginId, values: writableValues });
       closeConfigModal();
       showMessage('Plugin configuration saved', 'success');
     } catch (e) {
@@ -765,13 +771,33 @@
                       </option>
                     {/each}
                   </select>
+                {:else if prop.format === 'password'}
+                  <div class="password-wrapper">
+                    <input
+                      id="cfg-{key}"
+                      class="input"
+                      type={visiblePasswords[key] ? 'text' : 'password'}
+                      value={String(configValues[key] ?? '')}
+                      readonly={prop.readOnly ?? false}
+                      on:input={(e) => { if (!prop.readOnly) setConfigValue(key, e.currentTarget.value); }}
+                    />
+                    <button
+                      type="button"
+                      class="eye-toggle"
+                      title={visiblePasswords[key] ? 'Hide' : 'Show'}
+                      on:click={() => visiblePasswords[key] = !visiblePasswords[key]}
+                    >
+                      {visiblePasswords[key] ? '🙈' : '👁'}
+                    </button>
+                  </div>
                 {:else}
                   <input
                     id="cfg-{key}"
                     class="input"
-                    type={prop.format === 'password' ? 'password' : 'text'}
+                    type="text"
                     value={String(configValues[key] ?? '')}
-                    on:input={(e) => setConfigValue(key, e.currentTarget.value)}
+                    readonly={prop.readOnly ?? false}
+                    on:input={(e) => { if (!prop.readOnly) setConfigValue(key, e.currentTarget.value); }}
                   />
                 {/if}
               </div>
@@ -1312,5 +1338,37 @@
     font-size: 0.8rem;
     font-family: var(--font-mono);
     margin-top: var(--space-sm);
+  }
+
+  .password-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .password-wrapper .input {
+    padding-right: 2.5rem;
+  }
+
+  .eye-toggle {
+    position: absolute;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0.25rem;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity var(--transition-normal);
+  }
+
+  .eye-toggle:hover {
+    opacity: 1;
+  }
+
+  input[readonly] {
+    opacity: 0.7;
+    cursor: default;
   }
 </style>

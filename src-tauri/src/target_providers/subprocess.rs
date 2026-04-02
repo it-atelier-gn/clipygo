@@ -1,11 +1,14 @@
 use std::io::{BufRead, BufReader, Write};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter};
 
 use crate::settings::{PluginProvider, TargetProviderSettings};
 use crate::targets::{PluginStatus, SendPayload, Target, TargetProvider};
@@ -15,7 +18,8 @@ const MAX_FAILURES: u32 = 3;
 struct ProcessHandle {
     child: Child,
     stdin: ChildStdin,
-    reader: BufReader<ChildStdout>,
+    response_rx: mpsc::Receiver<Result<String, String>>,
+    _reader_thread: JoinHandle<()>,
 }
 
 struct ProviderState {
@@ -29,6 +33,7 @@ struct ProviderState {
 pub struct SubprocessProvider {
     config: PluginProvider,
     state: Mutex<ProviderState>,
+    app_handle: AppHandle,
 }
 
 // --- Protocol types ---
@@ -76,6 +81,66 @@ struct SendResponse {
     error: Option<String>,
 }
 
+// --- Line classification ---
+
+/// Classifies a stdout line from a plugin as an event, a response, or empty.
+#[derive(Debug, PartialEq)]
+enum LineKind {
+    /// JSON with an `"event"` field — plugin-initiated event.
+    Event(serde_json::Value),
+    /// Any other non-empty line — a response to a pending request.
+    Response(String),
+    /// Blank / whitespace-only line — skip.
+    Empty,
+}
+
+fn classify_line(line: &str) -> LineKind {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return LineKind::Empty;
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if value.get("event").is_some() {
+            return LineKind::Event(value);
+        }
+    }
+    LineKind::Response(trimmed.to_string())
+}
+
+/// Reads lines from `reader`, sending responses through `response_tx` and events through `event_tx`.
+/// Runs until EOF or an I/O error. Designed to run in a background thread.
+fn reader_loop(
+    reader: impl std::io::Read,
+    response_tx: mpsc::Sender<Result<String, String>>,
+    event_tx: mpsc::Sender<serde_json::Value>,
+) {
+    let mut reader = BufReader::new(reader);
+    loop {
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => {
+                let _ = response_tx.send(Err("Plugin closed stdout unexpectedly".to_string()));
+                break;
+            }
+            Err(e) => {
+                let _ = response_tx.send(Err(format!("Read error: {e}")));
+                break;
+            }
+            Ok(_) => match classify_line(&line) {
+                LineKind::Empty => continue,
+                LineKind::Event(value) => {
+                    let _ = event_tx.send(value);
+                }
+                LineKind::Response(trimmed) => {
+                    if response_tx.send(Ok(trimmed)).is_err() {
+                        break;
+                    }
+                }
+            },
+        }
+    }
+}
+
 // --- Command parsing ---
 
 /// Splits a command string into program + args, respecting double quotes.
@@ -111,7 +176,7 @@ fn parse_command(command: &str) -> Option<(String, Vec<String>)> {
 // --- Implementation ---
 
 impl SubprocessProvider {
-    pub fn new(config: PluginProvider) -> Self {
+    pub fn new(config: PluginProvider, app_handle: AppHandle) -> Self {
         Self {
             config,
             state: Mutex::new(ProviderState {
@@ -121,6 +186,7 @@ impl SubprocessProvider {
                 last_error: None,
                 info: None,
             }),
+            app_handle,
         }
     }
 
@@ -151,10 +217,28 @@ impl SubprocessProvider {
             .take()
             .ok_or_else(|| format!("Plugin '{}': could not get stdout", self.config.name))?;
 
+        let (response_tx, response_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::channel::<serde_json::Value>();
+        let app_handle = self.app_handle.clone();
+        let plugin_name = self.config.name.clone();
+
+        let reader_thread = std::thread::spawn(move || {
+            reader_loop(stdout, response_tx, event_tx);
+        });
+
+        // Background thread to forward events to Tauri
+        std::thread::spawn(move || {
+            while let Ok(value) = event_rx.recv() {
+                println!("Plugin '{}' emitted event: {}", plugin_name, value["event"]);
+                let _ = app_handle.emit("plugin-event", value);
+            }
+        });
+
         Ok(ProcessHandle {
             child,
             stdin,
-            reader: BufReader::new(stdout),
+            response_rx,
+            _reader_thread: reader_thread,
         })
     }
 
@@ -257,17 +341,11 @@ impl SubprocessProvider {
 
         writeln!(handle.stdin, "{json}").map_err(|e| format!("Write error: {e}"))?;
 
-        let mut response = String::new();
         handle
-            .reader
-            .read_line(&mut response)
-            .map_err(|e| format!("Read error: {e}"))?;
-
-        if response.is_empty() {
-            return Err("Plugin closed stdout unexpectedly".to_string());
-        }
-
-        Ok(response.trim().to_string())
+            .response_rx
+            .recv()
+            .map_err(|_| "Plugin reader thread died".to_string())
+            .and_then(|r| r)
     }
 }
 
@@ -522,14 +600,175 @@ mod tests {
     fn parse_command_whitespace_only_returns_none() {
         assert!(parse_command("   ").is_none());
     }
+
+    // --- classify_line ---
+
+    #[test]
+    fn classify_line_empty_string() {
+        assert_eq!(classify_line(""), LineKind::Empty);
+    }
+
+    #[test]
+    fn classify_line_whitespace_only() {
+        assert_eq!(classify_line("   \n"), LineKind::Empty);
+    }
+
+    #[test]
+    fn classify_line_event_with_event_field() {
+        let line = r#"{"event":"incoming_message","data":{"from_name":"Alice"}}"#;
+        match classify_line(line) {
+            LineKind::Event(v) => {
+                assert_eq!(v["event"], "incoming_message");
+                assert_eq!(v["data"]["from_name"], "Alice");
+            }
+            other => panic!("Expected Event, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn classify_line_event_with_whitespace() {
+        let line = r#"  {"event":"connection_status","data":{"status":"connected"}}  "#;
+        match classify_line(line) {
+            LineKind::Event(v) => assert_eq!(v["event"], "connection_status"),
+            other => panic!("Expected Event, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn classify_line_response_json_without_event() {
+        let line = r#"{"targets":[]}"#;
+        match classify_line(line) {
+            LineKind::Response(s) => assert_eq!(s, r#"{"targets":[]}"#),
+            other => panic!("Expected Response, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn classify_line_response_non_json() {
+        let line = "not json at all";
+        match classify_line(line) {
+            LineKind::Response(s) => assert_eq!(s, "not json at all"),
+            other => panic!("Expected Response, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn classify_line_response_json_with_event_null() {
+        // "event" key exists but is null — still an event (has the key)
+        let line = r#"{"event":null}"#;
+        match classify_line(line) {
+            LineKind::Event(v) => assert!(v.get("event").is_some()),
+            other => panic!("Expected Event, got {:?}", other),
+        }
+    }
+
+    // --- reader_loop ---
+
+    #[test]
+    fn reader_loop_separates_events_and_responses() {
+        use std::io::Cursor;
+
+        let input = concat!(
+            r#"{"name":"test","version":"1.0"}"#, "\n",
+            r#"{"event":"incoming_message","data":{}}"#, "\n",
+            r#"{"targets":[]}"#, "\n",
+            r#"{"event":"connection_status","data":{"status":"ok"}}"#, "\n",
+        );
+
+        let (resp_tx, resp_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+
+        reader_loop(Cursor::new(input), resp_tx, evt_tx);
+
+        // Collect responses (excluding the EOF error)
+        let responses: Vec<String> = resp_rx
+            .try_iter()
+            .filter_map(|r| r.ok())
+            .collect();
+        let events: Vec<serde_json::Value> = evt_rx.try_iter().collect();
+
+        assert_eq!(responses.len(), 2);
+        assert!(responses[0].contains("\"name\""));
+        assert!(responses[1].contains("\"targets\""));
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["event"], "incoming_message");
+        assert_eq!(events[1]["event"], "connection_status");
+    }
+
+    #[test]
+    fn reader_loop_eof_sends_error() {
+        use std::io::Cursor;
+
+        let input = ""; // immediate EOF
+        let (resp_tx, resp_rx) = mpsc::channel();
+        let (evt_tx, _evt_rx) = mpsc::channel();
+
+        reader_loop(Cursor::new(input), resp_tx, evt_tx);
+
+        let result = resp_rx.try_recv().unwrap();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("closed stdout"));
+    }
+
+    #[test]
+    fn reader_loop_skips_blank_lines() {
+        use std::io::Cursor;
+
+        let input = concat!(
+            "\n",
+            "   \n",
+            r#"{"success":true}"#, "\n",
+            "\n",
+        );
+
+        let (resp_tx, resp_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+
+        reader_loop(Cursor::new(input), resp_tx, evt_tx);
+
+        let responses: Vec<String> = resp_rx.try_iter().filter_map(|r| r.ok()).collect();
+        let events: Vec<serde_json::Value> = evt_rx.try_iter().collect();
+
+        assert_eq!(responses.len(), 1);
+        assert!(responses[0].contains("success"));
+        assert_eq!(events.len(), 0);
+    }
+
+    #[test]
+    fn reader_loop_handles_interleaved_events_and_responses() {
+        use std::io::Cursor;
+
+        let input = concat!(
+            r#"{"event":"e1","data":{}}"#, "\n",
+            r#"{"event":"e2","data":{}}"#, "\n",
+            r#"{"event":"e3","data":{}}"#, "\n",
+            r#"{"response":"finally"}"#, "\n",
+        );
+
+        let (resp_tx, resp_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+
+        reader_loop(Cursor::new(input), resp_tx, evt_tx);
+
+        let responses: Vec<String> = resp_rx.try_iter().filter_map(|r| r.ok()).collect();
+        let events: Vec<serde_json::Value> = evt_rx.try_iter().collect();
+
+        assert_eq!(responses.len(), 1);
+        assert_eq!(events.len(), 3);
+    }
 }
 
 pub fn create_subprocess_providers(
     settings: &TargetProviderSettings,
+    app_handle: &AppHandle,
 ) -> Vec<Arc<dyn TargetProvider>> {
     settings
         .plugins
         .iter()
-        .map(|plugin| Arc::new(SubprocessProvider::new(plugin.clone())) as Arc<dyn TargetProvider>)
+        .map(|plugin| {
+            Arc::new(SubprocessProvider::new(plugin.clone(), app_handle.clone()))
+                as Arc<dyn TargetProvider>
+        })
         .collect()
 }
