@@ -78,6 +78,7 @@ pub fn run() {
             let initial_settings = settings_coordinator.get_settings().clone();
             let target_coordinator = Arc::new(Mutex::new(TargetProviderCoordinator::new(
                 initial_settings.clone(),
+                app.handle().clone(),
             )));
             app.manage(target_coordinator.clone());
 
@@ -89,6 +90,18 @@ pub fn run() {
 
             // Register the clipboard listener exactly once
             start_clipboard_pattern_monitor(app.handle(), shared_patterns.clone());
+
+            // Listen for plugin events and show notification window for incoming messages
+            let app_handle_events = app.handle().clone();
+            app.listen("plugin-event", move |event| {
+                if let Ok(value) =
+                    serde_json::from_str::<serde_json::Value>(event.payload())
+                {
+                    if value.get("event").and_then(|e| e.as_str()) == Some("incoming_message") {
+                        show_notification_window(&app_handle_events);
+                    }
+                }
+            });
 
             // On settings change: update shortcut, patterns, and provider coordinator
             let app_handle_listener = app.handle().clone();
@@ -266,6 +279,52 @@ mod tests {
     fn default_pattern_google_meet_rejects_wrong_format() {
         // slug must be xxx-xxxx-xxx (3-4-3 lowercase)
         assert!(!matches_any("https://meet.google.com/toolong-slug"));
+    }
+}
+
+/// Shows the notification window, creating it if it doesn't exist.
+fn show_notification_window(app: &AppHandle) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(window) = app.get_webview_window("notification") {
+        let _ = window.show();
+        return;
+    }
+
+    // Create notification window in bottom-right corner
+    match WebviewWindowBuilder::new(app, "notification", WebviewUrl::App("notification".into()))
+        .title("clipygo — notification")
+        .inner_size(360.0, 300.0)
+        .decorations(false)
+        .always_on_top(true)
+        .focused(false)
+        .visible(true)
+        .devtools(true)
+        .build()
+    {
+        Ok(window) => {
+            // Position in bottom-right
+            if let Ok(monitor) = window.current_monitor() {
+                if let Some(monitor) = monitor {
+                    let screen = monitor.size();
+                    let scale = monitor.scale_factor();
+                    let x = (screen.width as f64 / scale) - 370.0;
+                    let y = (screen.height as f64 / scale) - 310.0;
+                    let _ = window.set_position(tauri::Position::Logical(
+                        tauri::LogicalPosition::new(x, y),
+                    ));
+                }
+            }
+
+            let window_clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window_clone.hide();
+                }
+            });
+        }
+        Err(e) => println!("Failed to create notification window: {e}"),
     }
 }
 
