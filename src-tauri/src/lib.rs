@@ -94,9 +94,7 @@ pub fn run() {
             // Listen for plugin events and show notification window for incoming messages
             let app_handle_events = app.handle().clone();
             app.listen("plugin-event", move |event| {
-                if let Ok(value) =
-                    serde_json::from_str::<serde_json::Value>(event.payload())
-                {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) {
                     if value.get("event").and_then(|e| e.as_str()) == Some("incoming_message") {
                         show_notification_window(&app_handle_events);
                     }
@@ -304,16 +302,13 @@ fn show_notification_window(app: &AppHandle) {
     {
         Ok(window) => {
             // Position in bottom-right
-            if let Ok(monitor) = window.current_monitor() {
-                if let Some(monitor) = monitor {
-                    let screen = monitor.size();
-                    let scale = monitor.scale_factor();
-                    let x = (screen.width as f64 / scale) - 370.0;
-                    let y = (screen.height as f64 / scale) - 310.0;
-                    let _ = window.set_position(tauri::Position::Logical(
-                        tauri::LogicalPosition::new(x, y),
-                    ));
-                }
+            if let Ok(Some(monitor)) = window.current_monitor() {
+                let screen = monitor.size();
+                let scale = monitor.scale_factor();
+                let x = (screen.width as f64 / scale) - 370.0;
+                let y = (screen.height as f64 / scale) - 310.0;
+                let _ = window
+                    .set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
             }
 
             let window_clone = window.clone();

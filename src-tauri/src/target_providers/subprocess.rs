@@ -274,10 +274,8 @@ impl SubprocessProvider {
                                     Ok(())
                                 })
                         {
-                            let msg = format!(
-                                "Plugin '{}' failed health check: {e}",
-                                self.config.name
-                            );
+                            let msg =
+                                format!("Plugin '{}' failed health check: {e}", self.config.name);
                             println!("{msg}");
                             state.process = None;
                             state.failure_count += 1;
@@ -669,10 +667,14 @@ mod tests {
         use std::io::Cursor;
 
         let input = concat!(
-            r#"{"name":"test","version":"1.0"}"#, "\n",
-            r#"{"event":"incoming_message","data":{}}"#, "\n",
-            r#"{"targets":[]}"#, "\n",
-            r#"{"event":"connection_status","data":{"status":"ok"}}"#, "\n",
+            r#"{"name":"test","version":"1.0"}"#,
+            "\n",
+            r#"{"event":"incoming_message","data":{}}"#,
+            "\n",
+            r#"{"targets":[]}"#,
+            "\n",
+            r#"{"event":"connection_status","data":{"status":"ok"}}"#,
+            "\n",
         );
 
         let (resp_tx, resp_rx) = mpsc::channel();
@@ -681,10 +683,7 @@ mod tests {
         reader_loop(Cursor::new(input), resp_tx, evt_tx);
 
         // Collect responses (excluding the EOF error)
-        let responses: Vec<String> = resp_rx
-            .try_iter()
-            .filter_map(|r| r.ok())
-            .collect();
+        let responses: Vec<String> = resp_rx.try_iter().filter_map(|r| r.ok()).collect();
         let events: Vec<serde_json::Value> = evt_rx.try_iter().collect();
 
         assert_eq!(responses.len(), 2);
@@ -715,12 +714,7 @@ mod tests {
     fn reader_loop_skips_blank_lines() {
         use std::io::Cursor;
 
-        let input = concat!(
-            "\n",
-            "   \n",
-            r#"{"success":true}"#, "\n",
-            "\n",
-        );
+        let input = concat!("\n", "   \n", r#"{"success":true}"#, "\n", "\n",);
 
         let (resp_tx, resp_rx) = mpsc::channel();
         let (evt_tx, evt_rx) = mpsc::channel();
@@ -740,10 +734,14 @@ mod tests {
         use std::io::Cursor;
 
         let input = concat!(
-            r#"{"event":"e1","data":{}}"#, "\n",
-            r#"{"event":"e2","data":{}}"#, "\n",
-            r#"{"event":"e3","data":{}}"#, "\n",
-            r#"{"response":"finally"}"#, "\n",
+            r#"{"event":"e1","data":{}}"#,
+            "\n",
+            r#"{"event":"e2","data":{}}"#,
+            "\n",
+            r#"{"event":"e3","data":{}}"#,
+            "\n",
+            r#"{"response":"finally"}"#,
+            "\n",
         );
 
         let (resp_tx, resp_rx) = mpsc::channel();
