@@ -26,8 +26,8 @@
     "@tauri-apps/cli": "^2",
     "autoprefixer": "^10.4.20",
     "svelte": "^5.55.1",
-    "svelte-check": "^4.0.0",
-    "typescript": "~5.9.3",
+    "svelte-check": "^4.4.6",
+    "typescript": "~6.0.2",
     "vite": "^8.0.3"
   }
 }
