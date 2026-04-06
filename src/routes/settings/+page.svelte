@@ -49,7 +49,6 @@
 
   let settings: AppSettings | null = null;
   let loading = true;
-  let saving = false;
   let message = "";
   let messageType: 'success' | 'error' | '' = '';
   let newPlugin = { name: '', command: '' };
@@ -209,39 +208,31 @@
     }
   }
 
-  async function saveSettings() {
-    if (!settings) return;
-    saving = true;
-    try {
-      await invoke('save_settings', { settings });
-      showMessage('Settings saved successfully', 'success');
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-      showMessage('Failed to save settings', 'error');
-    } finally {
-      saving = false;
-    }
-  }
+  let settingsSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  async function resetSettings() {
-    try {
-      settings = await invoke('reset_settings');
-      showMessage('Settings reset to defaults', 'success');
-    } catch (error) {
-      console.error('Failed to reset settings:', error);
-      showMessage('Failed to reset settings', 'error');
-    }
+  function scheduleSave() {
+    if (settingsSaveTimer) clearTimeout(settingsSaveTimer);
+    settingsSaveTimer = setTimeout(async () => {
+      if (!settings) return;
+      try {
+        await invoke('save_settings', { settings });
+      } catch (error) {
+        showMessage('Failed to save settings', 'error');
+      }
+    }, 500);
   }
 
   function addRegexPattern() {
     if (settings) {
       settings.regex_list = [...settings.regex_list, ''];
+      scheduleSave();
     }
   }
 
   function removeRegexPattern(index: number) {
     if (settings) {
       settings.regex_list = settings.regex_list.filter((_, i) => i !== index);
+      scheduleSave();
     }
   }
 
@@ -319,8 +310,21 @@
 
   // Config modal
 
+  interface ArrayItemProperty {
+    type: 'string';
+    title?: string;
+    description?: string;
+    format?: string;
+  }
+
+  interface ArrayItems {
+    type: 'object';
+    properties: Record<string, ArrayItemProperty>;
+    required?: string[];
+  }
+
   interface SchemaProperty {
-    type: 'string' | 'boolean';
+    type: 'string' | 'boolean' | 'array';
     title?: string;
     description?: string;
     default?: unknown;
@@ -329,6 +333,8 @@
     enumTitles?: string[];
     visibleIf?: Record<string, string | string[]>;
     readOnly?: boolean;
+    items?: ArrayItems;
+    maxItems?: number;
   }
 
   interface ConfigSchema {
@@ -345,9 +351,9 @@
   let configSchema: ConfigSchema | null = null;
   let configValues: Record<string, unknown> = {};
   let configInstructions = '';
-  let configSaving = false;
   let configError = '';
   let visiblePasswords: Record<string, boolean> = {};
+  let configSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   async function openConfigModal(plugin: PluginProvider) {
     configPluginId = plugin.id;
@@ -356,7 +362,6 @@
     configSchema = null;
     configValues = {};
     configInstructions = '';
-    configSaving = false;
     configError = '';
     visiblePasswords = {};
     configModalOpen = true;
@@ -373,29 +378,65 @@
     }
   }
 
-  function closeConfigModal() {
+  async function flushConfigSave() {
+    if (!configSchema || !configPluginId) return;
+    if (configSaveTimer) {
+      clearTimeout(configSaveTimer);
+      configSaveTimer = null;
+    }
+    const writableValues = Object.fromEntries(
+      Object.entries(configValues).filter(([k]) => !configSchema?.properties[k]?.readOnly)
+    );
+    try {
+      await invoke('set_plugin_config', { pluginId: configPluginId, values: writableValues });
+    } catch (e) {
+      configError = `${e}`;
+    }
+  }
+
+  function scheduleConfigSave() {
+    if (configSaveTimer) clearTimeout(configSaveTimer);
+    configSaveTimer = setTimeout(flushConfigSave, 500);
+  }
+
+  async function closeConfigModal() {
+    await flushConfigSave();
     configModalOpen = false;
   }
 
-  async function savePluginConfig() {
-    configSaving = true;
-    configError = '';
+  async function copyToClipboard(value: string) {
     try {
-      const writableValues = Object.fromEntries(
-        Object.entries(configValues).filter(([k]) => !configSchema?.properties[k]?.readOnly)
-      );
-      await invoke('set_plugin_config', { pluginId: configPluginId, values: writableValues });
-      closeConfigModal();
-      showMessage('Plugin configuration saved', 'success');
-    } catch (e) {
-      configError = `${e}`;
-    } finally {
-      configSaving = false;
+      await navigator.clipboard.writeText(value);
+      showMessage('Copied', 'success');
+    } catch {
+      showMessage('Copy failed', 'error');
     }
   }
 
   function setConfigValue(key: string, value: unknown) {
     configValues = { ...configValues, [key]: value };
+    scheduleConfigSave();
+  }
+
+  function addArrayItem(key: string, prop: SchemaProperty) {
+    const arr = [...((configValues[key] as Record<string, unknown>[]) ?? [])];
+    const newItem: Record<string, unknown> = {};
+    for (const field of Object.keys(prop.items?.properties ?? {})) {
+      newItem[field] = '';
+    }
+    setConfigValue(key, [...arr, newItem]);
+  }
+
+  function removeArrayItem(key: string, index: number) {
+    const arr = [...((configValues[key] as Record<string, unknown>[]) ?? [])];
+    arr.splice(index, 1);
+    setConfigValue(key, arr);
+  }
+
+  function updateArrayItem(key: string, index: number, field: string, value: unknown) {
+    const arr = [...((configValues[key] as Record<string, unknown>[]) ?? [])];
+    arr[index] = { ...arr[index], [field]: value };
+    setConfigValue(key, arr);
   }
 </script>
 
@@ -430,7 +471,7 @@
         </div>
       </div>
     {:else if settings}
-      <form on:submit|preventDefault={saveSettings} class="settings-form">
+      <div class="settings-form">
 
         <!-- General Settings -->
         <div class="card">
@@ -448,9 +489,10 @@
                 <div class="toggle-wrapper">
                   <input
                     type="checkbox"
-                    bind:checked={settings.autostart}
+                    checked={settings.autostart}
                     class="toggle-input"
                     id="autostart"
+                    on:change={(e) => { settings!.autostart = e.currentTarget.checked; scheduleSave(); }}
                   />
                   <label for="autostart" class="toggle-slider"></label>
                 </div>
@@ -463,8 +505,9 @@
                 <p class="text-secondary">Hotkey combination for window activation</p>
                 <input
                   class="input input-gaming"
-                  bind:value={settings.global_shortcut}
+                  value={settings.global_shortcut}
                   placeholder="CTRL+F10"
+                  on:input={(e) => { settings!.global_shortcut = e.currentTarget.value; scheduleSave(); }}
                 />
               </div>
             </div>
@@ -568,8 +611,9 @@
             <div class="registry-url-row">
               <input
                 class="input plugin-command-input"
-                bind:value={settings.registry_url}
+                value={settings.registry_url}
                 placeholder="Registry URL"
+                on:input={(e) => { settings!.registry_url = e.currentTarget.value; scheduleSave(); }}
               />
               <button
                 type="button"
@@ -646,9 +690,10 @@
                 <div class="regex-item">
                   <span class="regex-number">{(index + 1).toString().padStart(2, '0')}.</span>
                   <input
-                    bind:value={settings.regex_list[index]}
+                    value={pattern}
                     placeholder="Enter pattern..."
                     class="input regex-input"
+                    on:input={(e) => { settings!.regex_list[index] = e.currentTarget.value; scheduleSave(); }}
                   />
                   <button
                     type="button"
@@ -671,36 +716,7 @@
           </div>
         </div>
 
-        <!-- Action Buttons -->
-        <div class="card">
-          <div class="card-body">
-            <div class="actions flex gap-md">
-              <button
-                type="submit"
-                class="btn btn-primary btn-lg"
-                disabled={saving}
-              >
-                {#if saving}
-                  <div class="spinner small"></div>
-                  <span>Saving Configuration...</span>
-                {:else}
-                  💾 Save Configuration
-                {/if}
-              </button>
-
-              <button
-                type="button"
-                class="btn btn-secondary"
-                on:click={resetSettings}
-                disabled={saving}
-              >
-                🔄 Reset to Defaults
-              </button>
-            </div>
-          </div>
-        </div>
-
-      </form>
+      </div>
     {:else}
       <div class="card">
         <div class="error-state">
@@ -759,6 +775,26 @@
                     />
                     <label for="cfg-{key}" class="toggle-slider"></label>
                   </div>
+                {:else if prop.type === 'array' && prop.items?.type === 'object'}
+                  <div class="array-field">
+                    {#each (configValues[key] as Record<string, unknown>[]) ?? [] as item, i}
+                      <div class="array-item">
+                        {#each Object.entries(prop.items.properties) as [field, fieldProp]}
+                          <input
+                            class="input array-item-input"
+                            type="text"
+                            placeholder={fieldProp.title ?? field}
+                            value={String(item[field] ?? '')}
+                            on:input={(e) => updateArrayItem(key, i, field, e.currentTarget.value)}
+                          />
+                        {/each}
+                        <button type="button" class="btn btn-sm btn-danger" on:click={() => removeArrayItem(key, i)}>Remove</button>
+                      </div>
+                    {/each}
+                    {#if !prop.maxItems || ((configValues[key] as unknown[])?.length ?? 0) < prop.maxItems}
+                      <button type="button" class="btn btn-sm btn-secondary" on:click={() => addArrayItem(key, prop)}>+ Add</button>
+                    {/if}
+                  </div>
                 {:else if prop.enum}
                   <select
                     id="cfg-{key}"
@@ -781,6 +817,9 @@
                       readonly={prop.readOnly ?? false}
                       on:input={(e) => { if (!prop.readOnly) setConfigValue(key, e.currentTarget.value); }}
                     />
+                    {#if prop.readOnly}
+                      <button type="button" class="copy-btn" title="Copy" on:click={() => copyToClipboard(String(configValues[key] ?? ''))}>📋</button>
+                    {/if}
                     <button
                       type="button"
                       class="eye-toggle"
@@ -790,14 +829,24 @@
                       {visiblePasswords[key] ? '🙈' : '👁'}
                     </button>
                   </div>
+                {:else if prop.readOnly}
+                  <div class="readonly-wrapper">
+                    <input
+                      id="cfg-{key}"
+                      class="input"
+                      type="text"
+                      value={String(configValues[key] ?? '')}
+                      readonly
+                    />
+                    <button type="button" class="copy-btn" title="Copy" on:click={() => copyToClipboard(String(configValues[key] ?? ''))}>📋</button>
+                  </div>
                 {:else}
                   <input
                     id="cfg-{key}"
                     class="input"
                     type="text"
                     value={String(configValues[key] ?? '')}
-                    readonly={prop.readOnly ?? false}
-                    on:input={(e) => { if (!prop.readOnly) setConfigValue(key, e.currentTarget.value); }}
+                    on:input={(e) => setConfigValue(key, e.currentTarget.value)}
                   />
                 {/if}
               </div>
@@ -810,17 +859,7 @@
         {/if}
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" on:click={closeConfigModal} disabled={configSaving}>Cancel</button>
-        {#if configSchema}
-          <button class="btn btn-primary" on:click={savePluginConfig} disabled={configSaving}>
-            {#if configSaving}
-              <div class="spinner small"></div>
-              Saving...
-            {:else}
-              Save
-            {/if}
-          </button>
-        {/if}
+        <button class="btn btn-secondary" on:click={closeConfigModal}>Close</button>
       </div>
     </div>
   </div>
@@ -1084,14 +1123,6 @@
     font-size: 0.875rem;
   }
 
-  .actions {
-    display: flex;
-    gap: var(--space-md);
-  }
-
-  .actions .btn {
-    flex: 1;
-  }
 
   .error-state {
     text-align: center;
@@ -1350,6 +1381,10 @@
     padding-right: 2.5rem;
   }
 
+  .password-wrapper .copy-btn {
+    right: 2rem;
+  }
+
   .eye-toggle {
     position: absolute;
     right: 0.5rem;
@@ -1370,5 +1405,49 @@
   input[readonly] {
     opacity: 0.7;
     cursor: default;
+  }
+
+  .readonly-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .readonly-wrapper .input {
+    padding-right: 2.5rem;
+  }
+
+  .copy-btn {
+    position: absolute;
+    right: 0.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0.25rem;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity var(--transition-normal);
+  }
+
+  .copy-btn:hover {
+    opacity: 1;
+  }
+
+  .array-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .array-item {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+  }
+
+  .array-item-input {
+    flex: 1;
+    min-width: 0;
   }
 </style>

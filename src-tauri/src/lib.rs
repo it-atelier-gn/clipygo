@@ -11,6 +11,7 @@ use regex::Regex;
 
 use settings::{AppSettings, SettingsCoordinator};
 use tauri::{AppHandle, Listener, Manager};
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 use crate::targets::TargetProviderCoordinator;
@@ -87,6 +88,7 @@ pub fn run() {
                 Arc::new(Mutex::new(compile_patterns(&initial_settings.regex_list)));
 
             setup_shortcut(app.handle(), &initial_settings);
+            apply_autostart(app.handle(), initial_settings.autostart);
 
             // Register the clipboard listener exactly once
             start_clipboard_pattern_monitor(app.handle(), shared_patterns.clone());
@@ -110,6 +112,7 @@ pub fn run() {
                     let settings = sc.get_settings().clone();
                     println!("Settings changed — reloading providers");
                     setup_shortcut(&app_handle_listener, &settings);
+                    apply_autostart(&app_handle_listener, settings.autostart);
                     if let Ok(mut p) = shared_patterns_listener.lock() {
                         *p = compile_patterns(&settings.regex_list);
                         println!("Clipboard patterns updated: {} patterns", p.len());
@@ -124,6 +127,20 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+pub fn apply_autostart(app: &AppHandle, enabled: bool) {
+    let result = if enabled {
+        app.autolaunch().enable()
+    } else {
+        app.autolaunch().disable()
+    };
+    if let Err(e) = result {
+        println!(
+            "Failed to {} autostart: {e}",
+            if enabled { "enable" } else { "disable" }
+        );
+    }
 }
 
 pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
