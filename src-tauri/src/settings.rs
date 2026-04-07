@@ -1,10 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use tauri::{App, AppHandle, Emitter, Manager};
 use tauri_plugin_store::{Store, StoreExt};
+
+use crate::targets::TargetProviderCoordinator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MsTeamsSettings {
@@ -502,6 +504,7 @@ pub async fn install_registry_plugin(
 #[tauri::command]
 pub async fn update_registry_plugin(
     app_handle: AppHandle,
+    coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
     plugin: RegistryPlugin,
     platform_key: String,
 ) -> Result<(), String> {
@@ -520,6 +523,7 @@ pub async fn update_registry_plugin(
         .position(|p| p.registry_id.as_deref() == Some(&plugin.id))
         .ok_or_else(|| format!("Plugin '{}' is not installed from the registry", plugin.id))?;
 
+    let plugin_name = settings.target_providers.plugins[idx].name.clone();
     let dest: PathBuf = PathBuf::from(&settings.target_providers.plugins[idx].command);
 
     // Download
@@ -565,6 +569,12 @@ pub async fn update_registry_plugin(
                 plugin.id, platform.sha256, digest
             ));
         }
+    }
+
+    // Stop the running plugin process so the OS releases the file lock before we overwrite.
+    // The provider will be restarted when settings-changed triggers reload_providers.
+    if let Ok(mut coord) = coordinator.lock() {
+        coord.stop_provider(&plugin_name);
     }
 
     // Overwrite binary
