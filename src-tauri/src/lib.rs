@@ -44,7 +44,8 @@ pub fn run() {
             targets::get_plugin_config_schema,
             targets::set_plugin_config,
             targets::get_plugin_link,
-            targets::get_plugin_statuses
+            targets::get_plugin_statuses,
+            targets::get_pending_notifications
         ])
         .setup(|app| {
             trayicon::setup(app);
@@ -83,6 +84,11 @@ pub fn run() {
             )));
             app.manage(target_coordinator.clone());
 
+            // Queue for incoming plugin messages delivered before the notification window is ready.
+            let pending_notifications: Arc<Mutex<Vec<serde_json::Value>>> =
+                Arc::new(Mutex::new(Vec::new()));
+            app.manage(pending_notifications.clone());
+
             // Shared patterns — updated on settings change, read by the single clipboard listener
             let shared_patterns: Arc<Mutex<Vec<Regex>>> =
                 Arc::new(Mutex::new(compile_patterns(&initial_settings.regex_list)));
@@ -98,6 +104,11 @@ pub fn run() {
             app.listen("plugin-event", move |event| {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) {
                     if value.get("event").and_then(|e| e.as_str()) == Some("incoming_message") {
+                        if let Some(data) = value.get("data") {
+                            if let Ok(mut queue) = pending_notifications.lock() {
+                                queue.push(data.clone());
+                            }
+                        }
                         show_notification_window(&app_handle_events);
                     }
                 }
