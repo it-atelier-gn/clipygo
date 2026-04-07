@@ -373,3 +373,10 @@ pub async fn send_to_target(
 
     Err(format!("Target '{target_id}' not found"))
 }
+
+#[tauri::command]
+pub fn get_pending_notifications(
+    queue: tauri::State<'_, Arc<Mutex<Vec<serde_json::Value>>>>,
+) -> Vec<serde_json::Value> {
+    queue.lock().map(|mut q| q.drain(..).collect()).unwrap_or_default()
+}

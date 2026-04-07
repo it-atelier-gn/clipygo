@@ -1,6 +1,7 @@
 <script lang="ts">
   import { listen } from '@tauri-apps/api/event';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+  import { invoke } from '@tauri-apps/api/core';
   import { onDestroy, onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { writeText } from 'tauri-plugin-clipboard-api';
@@ -88,12 +89,19 @@
   onMount(async () => {
     if (!browser) return;
 
+    // Register listener first, then drain the queue — ensures no message is missed
+    // regardless of whether it arrived before or after this window was ready.
     unlistenPluginEvent = await listen<PluginEvent>('plugin-event', (event) => {
       const payload = event.payload;
       if (payload.event === 'incoming_message') {
         addNotification(payload.data);
       }
     });
+
+    const queued = await invoke<IncomingMessage[]>('get_pending_notifications');
+    for (const msg of queued) {
+      addNotification(msg);
+    }
   });
 
   onDestroy(() => {
