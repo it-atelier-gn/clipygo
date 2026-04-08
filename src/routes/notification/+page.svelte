@@ -15,11 +15,6 @@
     timestamp: number;
   }
 
-  interface PluginEvent {
-    event: string;
-    data: IncomingMessage;
-  }
-
   interface Notification {
     id: number;
     from_name: string;
@@ -33,7 +28,7 @@
 
   let notifications: Notification[] = [];
   let nextId = 0;
-  let unlistenPluginEvent: UnlistenFn;
+  let unlistenDirectMessage: UnlistenFn;
   let copiedId: number | null = null;
 
   function addNotification(msg: IncomingMessage) {
@@ -89,24 +84,26 @@
   onMount(async () => {
     if (!browser) return;
 
-    // Register listener first, then drain the queue — ensures no message is missed
-    // regardless of whether it arrived before or after this window was ready.
-    unlistenPluginEvent = await listen<PluginEvent>('plugin-event', (event) => {
-      const payload = event.payload;
-      if (payload.event === 'incoming_message') {
-        addNotification(payload.data);
-      }
+    // Direct delivery: Rust emits this globally when the window already exists.
+    // Uses global listen (not window-scoped) so it receives broadcasts from app.emit().
+    unlistenDirectMessage = await listen<IncomingMessage>('notification-message', (event) => {
+      addNotification(event.payload);
     });
 
+    // Drain the queue for messages that arrived before this window's JS was ready (first load only).
     const queued = await invoke<IncomingMessage[]>('get_pending_notifications');
     for (const msg of queued) {
       addNotification(msg);
+    }
+
+    if (notifications.length === 0) {
+      getCurrentWebviewWindow().hide();
     }
   });
 
   onDestroy(() => {
     if (!browser) return;
-    if (unlistenPluginEvent) unlistenPluginEvent();
+    if (unlistenDirectMessage) unlistenDirectMessage();
     for (const n of notifications) {
       if (n.dismissTimer) clearTimeout(n.dismissTimer);
     }
@@ -114,67 +111,113 @@
 </script>
 
 <div class="notification-container">
-  {#if notifications.length > 1}
-    <button class="dismiss-all" on:click={dismissAll}>
-      Dismiss all ({notifications.length})
-    </button>
-  {/if}
-
-  {#each notifications as notif (notif.id)}
-    <div class="notification-card">
-      <div class="notification-header">
-        <div class="sender">
-          <span class="sender-avatar">{notif.from_name.charAt(0).toUpperCase()}</span>
-          <span class="sender-name">{notif.from_name}</span>
-        </div>
-        <span class="timestamp">{formatTime(notif.timestamp)}</span>
-      </div>
-
-      <div class="notification-body">
-        <p class="content-preview">{truncate(notif.content, 200)}</p>
-      </div>
-
-      <div class="notification-actions">
-        <button class="btn-action btn-copy" on:click={() => copyContent(notif)}>
-          {copiedId === notif.id ? 'Copied!' : 'Copy'}
+  <div class="drag-strip" data-tauri-drag-region>
+    <span class="drag-label" data-tauri-drag-region>clipygo</span>
+    <div class="drag-strip-actions" data-tauri-drag-region>
+      {#if notifications.length > 1}
+        <button class="btn-strip" data-tauri-drag-region="false" on:click={dismissAll}>
+          Dismiss all ({notifications.length})
         </button>
-        <button class="btn-action btn-dismiss" on:click={() => dismiss(notif.id)}>
-          Dismiss
-        </button>
-      </div>
+      {/if}
+      <button class="btn-strip btn-strip-close" data-tauri-drag-region="false" on:click={() => getCurrentWebviewWindow().hide()}>✕</button>
     </div>
-  {/each}
+  </div>
 
-  {#if notifications.length === 0}
-    <div class="empty-state">No notifications</div>
-  {/if}
+  <div class="notifications-list">
+    {#each notifications as notif (notif.id)}
+      <div class="notification-card">
+        <div class="notification-header">
+          <div class="sender">
+            <span class="sender-avatar">{notif.from_name.charAt(0).toUpperCase()}</span>
+            <span class="sender-name">{notif.from_name}</span>
+          </div>
+          <span class="timestamp">{formatTime(notif.timestamp)}</span>
+        </div>
+
+        <div class="notification-body">
+          <p class="content-preview">{truncate(notif.content, 200)}</p>
+        </div>
+
+        <div class="notification-actions">
+          <button class="btn-action btn-copy" on:click={() => copyContent(notif)}>
+            {copiedId === notif.id ? 'Copied!' : 'Copy'}
+          </button>
+          <button class="btn-action btn-dismiss" on:click={() => dismiss(notif.id)}>
+            Dismiss
+          </button>
+        </div>
+      </div>
+    {/each}
+
+    {#if notifications.length === 0}
+      <div class="empty-state">No notifications</div>
+    {/if}
+  </div>
 </div>
 
 <style>
   .notification-container {
     display: flex;
     flex-direction: column;
-    gap: var(--space-sm);
-    padding: var(--space-sm);
     max-height: 100vh;
-    overflow-y: auto;
+    overflow: hidden;
   }
 
-  .dismiss-all {
-    align-self: flex-end;
+  .drag-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-xs) var(--space-sm);
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-primary);
+    cursor: grab;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .drag-label {
+    font-family: var(--font-gaming);
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+
+  .drag-strip-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  .btn-strip {
     background: none;
     border: none;
     color: var(--text-muted);
     font-family: var(--font-gaming);
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     cursor: pointer;
-    padding: var(--space-xs) var(--space-sm);
+    padding: 2px var(--space-xs);
+    border-radius: var(--radius-sm);
+    transition: color var(--transition-normal);
   }
 
-  .dismiss-all:hover {
+  .btn-strip:hover {
     color: var(--accent-primary);
+  }
+
+  .btn-strip-close:hover {
+    color: var(--accent-secondary);
+  }
+
+  .notifications-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding: var(--space-sm);
+    overflow-y: auto;
+    max-height: calc(100vh - 28px);
   }
 
   .notification-card {

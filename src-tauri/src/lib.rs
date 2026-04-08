@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use regex::Regex;
 
 use settings::{AppSettings, SettingsCoordinator};
-use tauri::{AppHandle, Listener, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
@@ -104,12 +104,13 @@ pub fn run() {
             app.listen("plugin-event", move |event| {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) {
                     if value.get("event").and_then(|e| e.as_str()) == Some("incoming_message") {
-                        if let Some(data) = value.get("data") {
+                        let data = value.get("data");
+                        if let Some(d) = data {
                             if let Ok(mut queue) = pending_notifications.lock() {
-                                queue.push(data.clone());
+                                queue.push(d.clone());
                             }
                         }
-                        show_notification_window(&app_handle_events);
+                        show_notification_window(&app_handle_events, data);
                     }
                 }
             });
@@ -309,10 +310,15 @@ mod tests {
 }
 
 /// Shows the notification window, creating it if it doesn't exist.
-fn show_notification_window(app: &AppHandle) {
+/// If the window already exists (was hidden), emits the message directly to it
+/// because hidden windows don't receive global app broadcasts.
+fn show_notification_window(app: &AppHandle, data: Option<&serde_json::Value>) {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
     if let Some(window) = app.get_webview_window("notification") {
+        if let Some(msg) = data {
+            let _ = app.emit("notification-message", msg);
+        }
         let _ = window.show();
         return;
     }
@@ -324,12 +330,12 @@ fn show_notification_window(app: &AppHandle) {
         .decorations(false)
         .always_on_top(true)
         .focused(false)
-        .visible(true)
+        .visible(false)
         .devtools(true)
         .build()
     {
         Ok(window) => {
-            // Position in bottom-right
+            // Position in bottom-right before making visible to avoid top-left flash
             if let Ok(Some(monitor)) = window.current_monitor() {
                 let screen = monitor.size();
                 let scale = monitor.scale_factor();
@@ -338,6 +344,7 @@ fn show_notification_window(app: &AppHandle) {
                 let _ = window
                     .set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
             }
+            let _ = window.show();
 
             let window_clone = window.clone();
             window.on_window_event(move |event| {
