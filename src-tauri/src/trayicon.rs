@@ -1,5 +1,8 @@
 use tauri::Manager;
 
+use crate::debug_log;
+use crate::settings::SettingsCoordinator;
+
 pub fn setup(app: &mut tauri::App) {
     use tauri::{
         image::Image,
@@ -8,16 +11,26 @@ pub fn setup(app: &mut tauri::App) {
         WebviewUrl, WebviewWindowBuilder,
     };
 
+    // Check if debug log should be shown
+    let show_debug = SettingsCoordinator::new(app)
+        .map(|s| s.get_settings().show_debug_log)
+        .unwrap_or(true);
+
     // Create menu items
     let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>).unwrap();
     let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>).unwrap();
+    let debug_i = MenuItem::with_id(app, "debug", "Debug Log", true, None::<&str>).unwrap();
     let about_i = MenuItem::with_id(app, "about", "About", true, None::<&str>).unwrap();
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).unwrap();
 
     // Build menu
-    let menu = MenuBuilder::new(app)
+    let mut menu_builder = MenuBuilder::new(app)
         .item(&show_i)
-        .item(&settings_i)
+        .item(&settings_i);
+    if show_debug {
+        menu_builder = menu_builder.item(&debug_i);
+    }
+    let menu = menu_builder
         .separator()
         .item(&about_i)
         .item(&quit_i)
@@ -66,6 +79,30 @@ pub fn setup(app: &mut tauri::App) {
                     });
                 }
             }
+            "debug" => {
+                if let Some(window) = app.get_webview_window("debug") {
+                    window.show().unwrap();
+                    window.set_focus().unwrap();
+                } else {
+                    let debug_window =
+                        WebviewWindowBuilder::new(app, "debug", WebviewUrl::App("debug".into()))
+                            .title("Debug Log - clipygo")
+                            .devtools(true)
+                            .inner_size(900.0, 600.0)
+                            .decorations(false)
+                            .center()
+                            .build()
+                            .unwrap();
+
+                    let debug_window_clone = debug_window.clone();
+                    debug_window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            debug_window_clone.hide().unwrap();
+                        }
+                    });
+                }
+            }
             "about" => {
                 if let Some(window) = app.get_webview_window("about") {
                     window.show().unwrap();
@@ -92,7 +129,12 @@ pub fn setup(app: &mut tauri::App) {
                 }
             }
             "quit" => app.exit(0),
-            _ => println!("Unhandled menu item: {:?}", event.id),
+            _ => debug_log(
+                app,
+                "app",
+                "warn",
+                format!("Unhandled menu item: {:?}", event.id),
+            ),
         })
         .build(app)
         .unwrap();

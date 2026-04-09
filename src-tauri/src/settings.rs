@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use tauri::{App, AppHandle, Emitter, Manager};
 use tauri_plugin_store::{Store, StoreExt};
 
+use crate::debug_log;
 use crate::targets::TargetProviderCoordinator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -39,6 +40,12 @@ pub struct AppSettings {
     pub target_providers: TargetProviderSettings,
     #[serde(default = "default_registry_url")]
     pub registry_url: String,
+    #[serde(default = "default_true")]
+    pub show_debug_log: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_registry_url() -> String {
@@ -65,6 +72,7 @@ impl Default for AppSettings {
             ],
             target_providers: TargetProviderSettings::default(),
             registry_url: DEFAULT_REGISTRY_URL.to_string(),
+            show_debug_log: true,
         }
     }
 }
@@ -401,17 +409,32 @@ pub async fn install_registry_plugin(
     let dest: PathBuf = install_dir.join(&filename);
 
     // Download
-    println!(
-        "[install] plugin='{}' platform='{}' url='{}'",
-        plugin.id, platform_key, platform.url
+    debug_log(
+        &app_handle,
+        "app",
+        "info",
+        format!(
+            "[install] plugin='{}' platform='{}' url='{}'",
+            plugin.id, platform_key, platform.url
+        ),
     );
-    println!("[install] dest='{}'", dest.display());
+    debug_log(
+        &app_handle,
+        "app",
+        "info",
+        format!("[install] dest='{}'", dest.display()),
+    );
 
     let response = reqwest::get(&platform.url)
         .await
         .map_err(|e| format!("Download failed: {e}"))?;
 
-    println!("[install] HTTP {}", response.status());
+    debug_log(
+        &app_handle,
+        "app",
+        "info",
+        format!("[install] HTTP {}", response.status()),
+    );
 
     if !response.status().is_success() {
         return Err(format!(
@@ -426,7 +449,12 @@ pub async fn install_registry_plugin(
         .await
         .map_err(|e| format!("Failed to read download: {e}"))?;
 
-    println!("[install] downloaded {} bytes", bytes.len());
+    debug_log(
+        &app_handle,
+        "app",
+        "info",
+        format!("[install] downloaded {} bytes", bytes.len()),
+    );
 
     // Verify SHA256 if provided
     if !platform.sha256.is_empty() {
@@ -527,9 +555,14 @@ pub async fn update_registry_plugin(
     let dest: PathBuf = PathBuf::from(&settings.target_providers.plugins[idx].command);
 
     // Download
-    println!(
-        "[update] plugin='{}' platform='{}' url='{}'",
-        plugin.id, platform_key, platform.url
+    debug_log(
+        &app_handle,
+        "app",
+        "info",
+        format!(
+            "[update] plugin='{}' platform='{}' url='{}'",
+            plugin.id, platform_key, platform.url
+        ),
     );
 
     let response = reqwest::get(&platform.url)
@@ -598,9 +631,14 @@ pub async fn update_registry_plugin(
         .map_err(|e| e.to_string())?;
     let _ = app_handle.emit("settings-changed", ());
 
-    println!(
-        "[update] plugin '{}' updated to v{}",
-        plugin.id, plugin.version
+    debug_log(
+        &app_handle,
+        "app",
+        "info",
+        format!(
+            "[update] plugin '{}' updated to v{}",
+            plugin.id, plugin.version
+        ),
     );
     Ok(())
 }
@@ -664,6 +702,7 @@ mod tests {
         assert_eq!(restored.global_shortcut, original.global_shortcut);
         assert_eq!(restored.regex_list, original.regex_list);
         assert_eq!(restored.registry_url, original.registry_url);
+        assert_eq!(restored.show_debug_log, original.show_debug_log);
     }
 
     #[test]
@@ -680,6 +719,7 @@ mod tests {
             settings.registry_url,
             "https://raw.githubusercontent.com/it-atelier-gn/clipygo-plugins/main/registry.json"
         );
+        assert!(settings.show_debug_log);
     }
 
     #[test]

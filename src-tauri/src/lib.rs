@@ -6,8 +6,10 @@ mod trayicon;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
+use serde::Serialize;
 
 use settings::{AppSettings, SettingsCoordinator};
 use tauri::{AppHandle, Emitter, Listener, Manager};
@@ -15,6 +17,41 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 use crate::targets::TargetProviderCoordinator;
+
+const MAX_PENDING_LOGS: usize = 1000;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DebugLogEntry {
+    pub source: String,
+    pub message: String,
+    pub timestamp: f64,
+    pub level: String,
+}
+
+/// Emits a debug log entry to the frontend and prints to stdout.
+pub fn debug_log(app: &AppHandle, source: &str, level: &str, message: String) {
+    println!("[{source}] {message}");
+    let entry = DebugLogEntry {
+        source: source.to_string(),
+        message,
+        timestamp: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64(),
+        level: level.to_string(),
+    };
+    if let Some(queue_state) = app.try_state::<DebugLogQueue>() {
+        if let Ok(mut queue) = queue_state.0.lock() {
+            if queue.len() >= MAX_PENDING_LOGS {
+                queue.remove(0);
+            }
+            queue.push(entry.clone());
+        }
+    }
+    let _ = app.emit("debug-log", entry);
+}
+
+pub struct DebugLogQueue(pub Mutex<Vec<DebugLogEntry>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -45,7 +82,9 @@ pub fn run() {
             targets::set_plugin_config,
             targets::get_plugin_link,
             targets::get_plugin_statuses,
-            targets::get_pending_notifications
+            targets::get_pending_notifications,
+            get_pending_debug_logs,
+            get_debug_sources
         ])
         .setup(|app| {
             trayicon::setup(app);
@@ -89,6 +128,9 @@ pub fn run() {
                 Arc::new(Mutex::new(Vec::new()));
             app.manage(pending_notifications.clone());
 
+            // Debug log queue — messages emitted before the debug window opens
+            app.manage(DebugLogQueue(Mutex::new(Vec::new())));
+
             // Shared patterns — updated on settings change, read by the single clipboard listener
             let shared_patterns: Arc<Mutex<Vec<Regex>>> =
                 Arc::new(Mutex::new(compile_patterns(&initial_settings.regex_list)));
@@ -122,12 +164,22 @@ pub fn run() {
             app.listen("settings-changed", move |_| {
                 if let Ok(sc) = SettingsCoordinator::from_handle(&app_handle_listener) {
                     let settings = sc.get_settings().clone();
-                    println!("Settings changed — reloading providers");
+                    debug_log(
+                        &app_handle_listener,
+                        "app",
+                        "info",
+                        "Settings changed — reloading providers".into(),
+                    );
                     setup_shortcut(&app_handle_listener, &settings);
                     apply_autostart(&app_handle_listener, settings.autostart);
                     if let Ok(mut p) = shared_patterns_listener.lock() {
                         *p = compile_patterns(&settings.regex_list);
-                        println!("Clipboard patterns updated: {} patterns", p.len());
+                        debug_log(
+                            &app_handle_listener,
+                            "app",
+                            "info",
+                            format!("Clipboard patterns updated: {} patterns", p.len()),
+                        );
                     }
                     if let Ok(mut coord) = target_coordinator_listener.lock() {
                         coord.reload_providers(&settings);
@@ -142,15 +194,33 @@ pub fn run() {
 }
 
 pub fn apply_autostart(app: &AppHandle, enabled: bool) {
+    // In dev builds the binary uses a dev-server URL and has no windows_subsystem
+    // attribute, so registering it for autostart would show a console window on
+    // boot and fail to load the frontend ("Not Found").
+    if cfg!(debug_assertions) {
+        debug_log(
+            app,
+            "app",
+            "info",
+            "Skipping autostart registration in dev build".into(),
+        );
+        return;
+    }
+
     let result = if enabled {
         app.autolaunch().enable()
     } else {
         app.autolaunch().disable()
     };
     if let Err(e) = result {
-        println!(
-            "Failed to {} autostart: {e}",
-            if enabled { "enable" } else { "disable" }
+        debug_log(
+            app,
+            "app",
+            "error",
+            format!(
+                "Failed to {} autostart: {e}",
+                if enabled { "enable" } else { "disable" }
+            ),
         );
     }
 }
@@ -160,19 +230,34 @@ pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
     {
         Ok(shortcut) => shortcut,
         Err(e) => {
-            println!("Unsupported key combination: {e}");
+            debug_log(
+                app,
+                "app",
+                "error",
+                format!("Unsupported key combination: {e}"),
+            );
             return;
         }
     };
 
     if !app.global_shortcut().is_registered(shortcut) {
         app.global_shortcut().unregister_all().unwrap();
-        println!("Registering shortcut: {shortcut:?}");
+        debug_log(
+            app,
+            "app",
+            "info",
+            format!("Registering shortcut: {shortcut:?}"),
+        );
         app.global_shortcut()
             .on_shortcut(shortcut, on_shortcut)
             .unwrap();
     } else {
-        println!("Shortcut already registered: {shortcut:?}");
+        debug_log(
+            app,
+            "app",
+            "debug",
+            format!("Shortcut already registered: {shortcut:?}"),
+        );
     }
 }
 
@@ -181,7 +266,12 @@ pub fn on_shortcut(
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
     _event: tauri_plugin_global_shortcut::ShortcutEvent,
 ) {
-    println!("Shortcut pressed: {shortcut:?}");
+    debug_log(
+        app,
+        "app",
+        "info",
+        format!("Shortcut pressed: {shortcut:?}"),
+    );
     if let Some(window) = app.get_webview_window("main") {
         window.show().unwrap();
         window.set_focus().unwrap();
@@ -191,9 +281,19 @@ pub fn on_shortcut(
 fn start_clipboard_monitor(app: &AppHandle) {
     let clipboard = app.state::<tauri_plugin_clipboard::Clipboard>();
     if let Err(e) = clipboard.start_monitor(app.clone()) {
-        println!("Failed to start clipboard monitor: {e}");
+        debug_log(
+            app,
+            "app",
+            "error",
+            format!("Failed to start clipboard monitor: {e}"),
+        );
     } else {
-        println!("Clipboard monitor started successfully");
+        debug_log(
+            app,
+            "app",
+            "info",
+            "Clipboard monitor started successfully".into(),
+        );
     }
 }
 
@@ -354,8 +454,33 @@ fn show_notification_window(app: &AppHandle, data: Option<&serde_json::Value>) {
                 }
             });
         }
-        Err(e) => println!("Failed to create notification window: {e}"),
+        Err(e) => debug_log(
+            app,
+            "app",
+            "error",
+            format!("Failed to create notification window: {e}"),
+        ),
     }
+}
+
+#[tauri::command]
+fn get_pending_debug_logs(
+    queue: tauri::State<'_, DebugLogQueue>,
+) -> Result<Vec<DebugLogEntry>, String> {
+    let mut logs = queue.0.lock().map_err(|e| format!("Lock error: {e}"))?;
+    Ok(logs.drain(..).collect())
+}
+
+#[tauri::command]
+fn get_debug_sources(
+    coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
+) -> Result<Vec<String>, String> {
+    let coord = coordinator.lock().map_err(|e| format!("Lock error: {e}"))?;
+    let mut sources = vec!["app".to_string()];
+    for status in coord.get_plugin_statuses() {
+        sources.push(status.name);
+    }
+    Ok(sources)
 }
 
 /// Registers the clipboard update listener exactly once.
@@ -373,7 +498,12 @@ fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<V
                 };
                 for pattern in patterns.iter() {
                     if pattern.is_match(&text) {
-                        println!("Clipboard pattern matched — showing window");
+                        debug_log(
+                            &app_handle,
+                            "app",
+                            "info",
+                            "Clipboard pattern matched — showing window".into(),
+                        );
                         if let Some(window) = app_handle.get_webview_window("main") {
                             window.show().unwrap();
                             window.set_focus().unwrap();
