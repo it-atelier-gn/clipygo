@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+use crate::debug_log;
 use crate::settings::{PluginProvider, TargetProviderSettings};
 use crate::targets::{PluginStatus, SendPayload, Target, TargetProvider};
 
@@ -199,7 +200,7 @@ impl SubprocessProvider {
         cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
 
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -216,6 +217,7 @@ impl SubprocessProvider {
             .stdout
             .take()
             .ok_or_else(|| format!("Plugin '{}': could not get stdout", self.config.name))?;
+        let stderr = child.stderr.take();
 
         let (response_tx, response_rx) = mpsc::channel();
         let (event_tx, event_rx) = mpsc::channel::<serde_json::Value>();
@@ -227,12 +229,39 @@ impl SubprocessProvider {
         });
 
         // Background thread to forward events to Tauri
-        std::thread::spawn(move || {
-            while let Ok(value) = event_rx.recv() {
-                println!("Plugin '{}' emitted event: {}", plugin_name, value["event"]);
-                let _ = app_handle.emit("plugin-event", value);
-            }
-        });
+        {
+            let app_handle = app_handle.clone();
+            let plugin_name = plugin_name.clone();
+            std::thread::spawn(move || {
+                while let Ok(value) = event_rx.recv() {
+                    debug_log(
+                        &app_handle,
+                        &plugin_name,
+                        "info",
+                        format!("Event: {}", value["event"]),
+                    );
+                    let _ = app_handle.emit("plugin-event", value);
+                }
+            });
+        }
+
+        // Background thread to capture stderr and emit as debug logs
+        if let Some(stderr) = stderr {
+            let app_handle = self.app_handle.clone();
+            let plugin_name = self.config.name.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(line) if !line.trim().is_empty() => {
+                            debug_log(&app_handle, &plugin_name, "debug", line);
+                        }
+                        Err(_) => break,
+                        _ => {}
+                    }
+                }
+            });
+        }
 
         Ok(ProcessHandle {
             child,
@@ -276,7 +305,7 @@ impl SubprocessProvider {
                         {
                             let msg =
                                 format!("Plugin '{}' failed health check: {e}", self.config.name);
-                            println!("{msg}");
+                            debug_log(&self.app_handle, &self.config.name, "warn", msg.clone());
                             state.process = None;
                             state.failure_count += 1;
                             state.last_error = Some(msg.clone());
@@ -286,7 +315,12 @@ impl SubprocessProvider {
                             }
                             continue;
                         }
-                        println!("Plugin '{}' started successfully", self.config.name);
+                        debug_log(
+                            &self.app_handle,
+                            &self.config.name,
+                            "info",
+                            format!("Plugin '{}' started successfully", self.config.name),
+                        );
                         state.failure_count = 0;
                     }
                     Err(e) => {
@@ -311,7 +345,7 @@ impl SubprocessProvider {
                         self.config.name,
                         attempt + 1,
                     );
-                    println!("{msg}");
+                    debug_log(&self.app_handle, &self.config.name, "error", msg.clone());
                     // Kill the dead process
                     if let Some(mut handle) = state.process.take() {
                         let _ = handle.child.kill();

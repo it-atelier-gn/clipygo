@@ -25,6 +25,7 @@
       plugins: PluginProvider[];
     };
     registry_url: string;
+    show_debug_log: boolean;
   }
 
   interface RegistryPlatform {
@@ -495,6 +496,25 @@
                     on:change={(e) => { settings!.autostart = e.currentTarget.checked; scheduleSave(); }}
                   />
                   <label for="autostart" class="toggle-slider"></label>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <div class="toggle-setting">
+                <div class="setting-info">
+                  <h3>Debug Log</h3>
+                  <p class="text-secondary">Show debug log in system tray menu (restart required)</p>
+                </div>
+                <div class="toggle-wrapper">
+                  <input
+                    type="checkbox"
+                    checked={settings.show_debug_log}
+                    class="toggle-input"
+                    id="show_debug_log"
+                    on:change={(e) => { settings!.show_debug_log = e.currentTarget.checked; scheduleSave(); }}
+                  />
+                  <label for="show_debug_log" class="toggle-slider"></label>
                 </div>
               </div>
             </div>

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use tauri::AppHandle;
 
+use crate::debug_log;
 use crate::settings::{AppSettings, TargetProviderSettings};
 use crate::target_providers::subprocess::create_subprocess_providers;
 
@@ -136,10 +137,15 @@ impl TargetProviderCoordinator {
 
         for (name, provider) in &self.providers {
             let enabled = provider.is_enabled(&settings.target_providers);
-            println!(
-                "Provider '{}' is {}",
-                name,
-                if enabled { "enabled" } else { "disabled" }
+            debug_log(
+                &self.app_handle,
+                "app",
+                "info",
+                format!(
+                    "Provider '{}' is {}",
+                    name,
+                    if enabled { "enabled" } else { "disabled" }
+                ),
             );
         }
     }
@@ -255,6 +261,7 @@ mod tests {
 
 #[tauri::command]
 pub async fn get_targets(
+    app: AppHandle,
     coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
 ) -> Result<GetTargetsResult, String> {
     let (providers, settings) = coordinator
@@ -271,7 +278,12 @@ pub async fn get_targets(
                 Ok(mut targets) => all_targets.append(&mut targets),
                 Err(e) => {
                     let msg = format!("{e}");
-                    println!("Failed to get targets from '{}': {}", provider.name(), msg);
+                    debug_log(
+                        &app,
+                        &provider.name(),
+                        "error",
+                        format!("Failed to get targets: {msg}"),
+                    );
                     errors.push(PluginError {
                         plugin_name: provider.name().to_string(),
                         message: msg,
@@ -281,7 +293,12 @@ pub async fn get_targets(
         }
     }
 
-    println!("Total targets retrieved: {}", all_targets.len());
+    debug_log(
+        &app,
+        "app",
+        "debug",
+        format!("Total targets retrieved: {}", all_targets.len()),
+    );
     Ok(GetTargetsResult {
         targets: all_targets,
         errors,
