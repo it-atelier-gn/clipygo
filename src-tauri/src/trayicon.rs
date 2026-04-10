@@ -24,9 +24,7 @@ pub fn setup(app: &mut tauri::App) {
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).unwrap();
 
     // Build menu
-    let mut menu_builder = MenuBuilder::new(app)
-        .item(&show_i)
-        .item(&settings_i);
+    let mut menu_builder = MenuBuilder::new(app).item(&show_i).item(&settings_i);
     if show_debug {
         menu_builder = menu_builder.item(&debug_i);
     }

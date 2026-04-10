@@ -280,7 +280,7 @@ pub async fn get_targets(
                     let msg = format!("{e}");
                     debug_log(
                         &app,
-                        &provider.name(),
+                        provider.name(),
                         "error",
                         format!("Failed to get targets: {msg}"),
                     );
