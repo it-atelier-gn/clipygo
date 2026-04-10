@@ -5,6 +5,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { writeText } from 'tauri-plugin-clipboard-api';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import type { UnlistenFn } from '@tauri-apps/api/event';
 
   interface IncomingMessage {
@@ -81,6 +82,18 @@
     return text.length > max ? text.slice(0, max) + '...' : text;
   }
 
+  const URL_RE = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/i;
+
+  function extractUrl(text: string): string | null {
+    const m = text.match(URL_RE);
+    return m ? m[0] : null;
+  }
+
+  async function openLink(notif: Notification) {
+    const url = extractUrl(notif.content);
+    if (url) await openUrl(url);
+  }
+
   onMount(async () => {
     if (!browser) return;
 
@@ -142,6 +155,11 @@
           <button class="btn-action btn-copy" on:click={() => copyContent(notif)}>
             {copiedId === notif.id ? 'Copied!' : 'Copy'}
           </button>
+          {#if extractUrl(notif.content)}
+            <button class="btn-action btn-open" on:click={() => openLink(notif)}>
+              Open
+            </button>
+          {/if}
           <button class="btn-action btn-dismiss" on:click={() => dismiss(notif.id)}>
             Dismiss
           </button>
@@ -325,6 +343,11 @@
     border-color: var(--accent-primary);
     color: var(--accent-primary);
     box-shadow: var(--glow-primary);
+  }
+
+  .btn-open:hover {
+    border-color: var(--accent-purple, var(--accent-primary));
+    color: var(--accent-purple, var(--accent-primary));
   }
 
   .btn-dismiss:hover {
