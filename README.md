@@ -1,4 +1,4 @@
-# 📋 clipygo
+# clipygo
 
 [![Build](https://github.com/it-atelier-gn/clipygo/actions/workflows/ci.yml/badge.svg)](https://github.com/it-atelier-gn/clipygo/actions)
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org/)
@@ -8,61 +8,11 @@
 
 Clipboard monitor that watches for specific content patterns and lets you route them to configured targets — instantly, with a single keypress.
 
----
-
-## ✨ Features
-
-- 🔍 **Pattern detection** — regex-based clipboard monitoring triggers the popup automatically when a match is found (meeting links, JetBrains Code With Me, and more)
-- ⌨️ **Global hotkey** — summon the popup at any time with a configurable shortcut (default `Ctrl+F10`)
-- 🎯 **Target routing** — send clipboard content to any configured target with one click or `Enter`
-- 🔌 **Subprocess plugin system** — extend clipygo with any executable that speaks the JSON protocol over stdin/stdout (Node.js, Python, Rust, Go — anything)
-- 💾 **Persistent plugins** — plugin processes stay alive, maintaining their own state and connections
-- 📦 **Plugin registry** — browse and install published plugins from the registry with SHA256-verified downloads
-- 🚀 **System tray** — runs silently in the background, always ready
-- 🔄 **Autostart** — optionally launch on system boot
-- 🔒 **Encrypted clipboard relay** — share clipboard content with other users via E2E encryption through a zero-knowledge relay server ([relay plugin](https://github.com/it-atelier-gn/clipygo-plugin-relay))
-- 🔔 **Plugin notifications** — plugins can push real-time events and notifications without polling
-- 🩺 **Plugin health monitoring** — real-time status indicators in settings, warning banner in popup when a plugin fails
-- 🪟 **Frameless UI** — compact, keyboard-driven popup with a cyberpunk aesthetic
+It sits in your system tray, monitors the clipboard for regex matches (meeting links, Code With Me sessions, etc.), and pops up a compact window where you pick a target and hit Enter. Plugins handle the actual delivery — they're just executables that speak JSON over stdin/stdout.
 
 ---
 
-## 🖼️ How It Works
-
-```mermaid
-flowchart TD
-    CB[📋 Clipboard] -->|text copied| MON[Clipboard Monitor]
-    MON -->|regex match| POPUP[clipygo Popup]
-    HK[⌨️ Global Hotkey] -->|Ctrl+F10| POPUP
-
-    POPUP --> CONTENT[Clipboard Content]
-    POPUP --> TARGETS[Target List]
-
-    TARGETS --> PA[🎯 Target A]
-    TARGETS --> PB[🎯 Target B]
-    TARGETS --> PC[🎯 Target C]
-
-    PA & PB & PC -->|user selects| SEND[Send Request]
-
-    SEND -->|JSON over stdin| PLUGIN[Plugin Process\nnode / python / rust / go]
-
-    PLUGIN -->|JSON over stdout| RESULT[✅ Success / ❌ Error]
-
-    PLUGIN -->|HTTP| EXT[Teams / Slack / GitHub / ...]
-
-    style POPUP fill:#1a1a2e,color:#00d4ff,stroke:#00d4ff
-    style PLUGIN fill:#1a1a2e,color:#ff6b35,stroke:#ff6b35
-    style EXT fill:#1a1a2e,color:#00ff88,stroke:#00ff88
-```
-
-1. clipygo monitors your clipboard in the background
-2. When text matches any configured regex — or you press the hotkey — the popup appears
-3. The popup shows your clipboard content and all available targets from all enabled plugins
-4. Pick a target with mouse or keyboard — content is sent, popup hides
-
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -75,23 +25,18 @@ flowchart TD
 ### Build & Run
 
 ```sh
-# Clone the repo
 git clone https://github.com/it-atelier-gn/clipygo.git
 cd clipygo
-
-# Install frontend dependencies
 npm install
-
-# Run in development mode
 cargo tauri dev
 
-# Build a release binary
+# or build a release binary
 cargo tauri build
 ```
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Settings are persisted to `%APPDATA%\clipygo\config.json` and managed through the in-app settings window (tray icon → Settings).
 
@@ -115,9 +60,9 @@ Add your own patterns in the settings window under **Pattern Recognition**.
 
 ---
 
-## 🔌 Plugin System
+## Plugin System
 
-clipygo uses a **persistent subprocess model** for target providers. A plugin is any executable that reads JSON requests from stdin and writes JSON responses to stdout — one JSON object per line. The process stays alive for the lifetime of the session.
+clipygo uses a persistent subprocess model for target providers. A plugin is any executable that reads JSON requests from stdin and writes JSON responses to stdout — one JSON object per line. The process stays alive for the lifetime of the session.
 
 ### Adding a plugin
 
@@ -208,7 +153,7 @@ The optional `link` field provides a URL shown next to the plugin name in settin
 }
 ```
 
-If this command is implemented, clipygo shows a **⚙ Configure** button next to the plugin in Settings.
+If this command is implemented, clipygo shows a **Configure** button next to the plugin in Settings.
 
 Supported field types: `string` (text input), `string` with `format: "password"` (password input with visibility toggle), `string` with `enum` (select), `boolean` (toggle).
 
@@ -230,7 +175,7 @@ The plugin is responsible for persisting the values (e.g. to its own config file
 
 ### Plugin-initiated events
 
-Plugins can also push unsolicited events to clipygo by writing JSON lines to stdout at any time. Lines with a top-level `"event"` field are treated as events (not responses) and forwarded to clipygo's event system.
+Plugins can push unsolicited events to clipygo by writing JSON lines to stdout at any time. Lines with a top-level `"event"` field are treated as events and forwarded to clipygo's event system.
 
 ```json
 {"event":"incoming_message","data":{"from_name":"Alice","from_id":"abc123","content":"Hello!","format":"text","timestamp":1711900000}}
@@ -244,7 +189,7 @@ When an `incoming_message` event is received, clipygo shows a notification windo
 
 ### Error handling
 
-clipygo auto-restarts a crashed plugin on the next request. After **3 consecutive failures** the plugin is marked as errored and paused. The settings page shows a health indicator per plugin (green `ok` / red `error` with details on hover), and the popup shows a warning banner when any plugin fails to load targets.
+clipygo auto-restarts a crashed plugin on the next request. After 3 consecutive failures the plugin is marked as errored and paused. The settings page shows a health indicator per plugin, and the popup shows a warning banner when any plugin fails to load targets.
 
 ### Demo plugin
 
@@ -306,7 +251,7 @@ for line in sys.stdin:
 
 ---
 
-## 📦 Plugin Registry
+## Plugin Registry
 
 The built-in registry browser (Settings → Plugin Registry) lets you browse and install plugins with one click. The default registry is hosted at [it-atelier-gn/clipygo-plugins](https://github.com/it-atelier-gn/clipygo-plugins).
 
@@ -314,46 +259,16 @@ To publish a plugin to the registry, see the [registry README](https://github.co
 
 ---
 
-## 🏗️ Architecture
-
-```
-clipygo/
-├── src/                        # SvelteKit frontend
-│   ├── routes/
-│   │   ├── main/               # Popup window (clipboard content + target list)
-│   │   ├── notification/       # Plugin event notification window
-│   │   └── settings/           # Settings window
-│   └── app.css                 # Global styles
-└── src-tauri/                  # Tauri / Rust backend
-    └── src/
-        ├── lib.rs              # App setup, clipboard monitor, global shortcut, notification window
-        ├── targets.rs          # TargetProvider trait + coordinator
-        ├── settings.rs         # Settings model + persistence
-        ├── trayicon.rs         # System tray setup
-        └── target_providers/
-            └── subprocess.rs   # Persistent subprocess plugin runner (background reader + event dispatch)
-```
-
-### Key design decisions
-
-- 🔄 **Persistent subprocess plugins** — processes stay alive, maintaining their own connections, tokens, and state; no per-request startup cost
-- 🔒 **Snapshot pattern** — `TargetProviderCoordinator::snapshot()` extracts providers before any `.await`, avoiding `MutexGuard` held across async boundaries
-- 💾 **Settings via tauri-plugin-store** — JSON persistence with reactive reload; settings changes trigger live coordinator reload without restart
-- 🔑 **OS keychain ready** — `tmuntaner-keyring` is available for providers that need to store secrets (e.g. OAuth tokens)
-
----
-
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome. For substantial changes, open an issue first to discuss the approach.
 
 ```sh
-# Run checks before submitting
 cd src-tauri && cargo check && cargo clippy
 ```
 
 ---
 
-## 📄 License
+## License
 
 MIT © 2026 Georg Nelles
