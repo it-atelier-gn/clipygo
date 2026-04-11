@@ -162,7 +162,8 @@
 
     } catch (error) {
       console.error('Failed to send to target:', error);
-      showMessage(`Failed to send to ${target.title}`, 'error');
+      const reason = typeof error === 'string' ? error : `Failed to send to ${target.title}`;
+      showMessage(reason, 'error');
     } finally {
       sendingTo = null;
     }

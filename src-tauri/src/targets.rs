@@ -364,6 +364,7 @@ pub fn get_plugin_statuses(
 
 #[tauri::command]
 pub async fn send_to_target(
+    app: AppHandle,
     coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
     target_id: String,
     payload: SendPayload,
@@ -383,7 +384,11 @@ pub async fn send_to_target(
                 return provider
                     .send_to_target(&target_id, &payload)
                     .await
-                    .map_err(|e| format!("Failed to send to target: {e}"));
+                    .map_err(|e| {
+                        let msg = format!("Failed to send: {e}");
+                        debug_log(&app, provider.name(), "error", msg.clone());
+                        msg
+                    });
             }
         }
     }
