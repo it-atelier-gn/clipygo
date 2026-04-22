@@ -8,6 +8,7 @@
     "core:window:allow-hide",
     "core:window:allow-show",
     "core:window:allow-start-dragging",
-    "clipboard:allow-write-text"
+    "clipboard:allow-write-text",
+    "opener:default"
   ]
 }

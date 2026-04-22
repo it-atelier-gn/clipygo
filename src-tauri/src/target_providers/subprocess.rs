@@ -490,6 +490,20 @@ impl TargetProvider for SubprocessProvider {
     }
 }
 
+pub fn create_subprocess_providers(
+    settings: &TargetProviderSettings,
+    app_handle: &AppHandle,
+) -> Vec<Arc<dyn TargetProvider>> {
+    settings
+        .plugins
+        .iter()
+        .map(|plugin| {
+            Arc::new(SubprocessProvider::new(plugin.clone(), app_handle.clone()))
+                as Arc<dyn TargetProvider>
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,7 +667,7 @@ mod tests {
                 assert_eq!(v["event"], "incoming_message");
                 assert_eq!(v["data"]["from_name"], "Alice");
             }
-            other => panic!("Expected Event, got {:?}", other),
+            other => panic!("Expected Event, got {other:?}"),
         }
     }
 
@@ -662,7 +676,7 @@ mod tests {
         let line = r#"  {"event":"connection_status","data":{"status":"connected"}}  "#;
         match classify_line(line) {
             LineKind::Event(v) => assert_eq!(v["event"], "connection_status"),
-            other => panic!("Expected Event, got {:?}", other),
+            other => panic!("Expected Event, got {other:?}"),
         }
     }
 
@@ -671,7 +685,7 @@ mod tests {
         let line = r#"{"targets":[]}"#;
         match classify_line(line) {
             LineKind::Response(s) => assert_eq!(s, r#"{"targets":[]}"#),
-            other => panic!("Expected Response, got {:?}", other),
+            other => panic!("Expected Response, got {other:?}"),
         }
     }
 
@@ -680,7 +694,7 @@ mod tests {
         let line = "not json at all";
         match classify_line(line) {
             LineKind::Response(s) => assert_eq!(s, "not json at all"),
-            other => panic!("Expected Response, got {:?}", other),
+            other => panic!("Expected Response, got {other:?}"),
         }
     }
 
@@ -690,7 +704,7 @@ mod tests {
         let line = r#"{"event":null}"#;
         match classify_line(line) {
             LineKind::Event(v) => assert!(v.get("event").is_some()),
-            other => panic!("Expected Event, got {:?}", other),
+            other => panic!("Expected Event, got {other:?}"),
         }
     }
 
@@ -789,18 +803,4 @@ mod tests {
         assert_eq!(responses.len(), 1);
         assert_eq!(events.len(), 3);
     }
-}
-
-pub fn create_subprocess_providers(
-    settings: &TargetProviderSettings,
-    app_handle: &AppHandle,
-) -> Vec<Arc<dyn TargetProvider>> {
-    settings
-        .plugins
-        .iter()
-        .map(|plugin| {
-            Arc::new(SubprocessProvider::new(plugin.clone(), app_handle.clone()))
-                as Arc<dyn TargetProvider>
-        })
-        .collect()
 }
