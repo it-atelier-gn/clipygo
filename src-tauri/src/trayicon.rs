@@ -18,13 +18,17 @@ pub fn setup(app: &mut tauri::App) {
 
     // Create menu items
     let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>).unwrap();
+    let history_i = MenuItem::with_id(app, "history", "History…", true, None::<&str>).unwrap();
     let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>).unwrap();
     let debug_i = MenuItem::with_id(app, "debug", "Debug Log", true, None::<&str>).unwrap();
     let about_i = MenuItem::with_id(app, "about", "About", true, None::<&str>).unwrap();
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>).unwrap();
 
     // Build menu
-    let mut menu_builder = MenuBuilder::new(app).item(&show_i).item(&settings_i);
+    let mut menu_builder = MenuBuilder::new(app)
+        .item(&show_i)
+        .item(&history_i)
+        .item(&settings_i);
     if show_debug {
         menu_builder = menu_builder.item(&debug_i);
     }
@@ -73,6 +77,33 @@ pub fn setup(app: &mut tauri::App) {
                         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                             api.prevent_close();
                             settings_window_clone.hide().unwrap();
+                        }
+                    });
+                }
+            }
+            "history" => {
+                if let Some(window) = app.get_webview_window("history") {
+                    window.show().unwrap();
+                    window.set_focus().unwrap();
+                } else {
+                    let history_window = WebviewWindowBuilder::new(
+                        app,
+                        "history",
+                        WebviewUrl::App("history".into()),
+                    )
+                    .title("History - clipygo")
+                    .devtools(true)
+                    .inner_size(900.0, 640.0)
+                    .decorations(false)
+                    .center()
+                    .build()
+                    .unwrap();
+
+                    let history_window_clone = history_window.clone();
+                    history_window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            history_window_clone.hide().unwrap();
                         }
                     });
                 }
