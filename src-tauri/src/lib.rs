@@ -1,3 +1,5 @@
+mod history;
+mod history_commands;
 mod settings;
 mod target_providers;
 mod targets;
@@ -11,11 +13,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use regex::Regex;
 use serde::Serialize;
 
-use settings::{AppSettings, SettingsCoordinator};
+use settings::{AppSettings, HistorySettings, SettingsCoordinator};
 use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
+use crate::history::HistoryCoordinator;
 use crate::targets::TargetProviderCoordinator;
 
 const MAX_PENDING_LOGS: usize = 1000;
@@ -83,6 +86,14 @@ pub fn run() {
             targets::get_plugin_link,
             targets::get_plugin_statuses,
             targets::get_pending_notifications,
+            history_commands::history_list,
+            history_commands::history_stats,
+            history_commands::history_get_image,
+            history_commands::history_resend,
+            history_commands::history_pin,
+            history_commands::history_set_last_sent_to,
+            history_commands::history_delete,
+            history_commands::history_clear,
             get_pending_debug_logs,
             get_debug_sources
         ])
@@ -138,8 +149,30 @@ pub fn run() {
             setup_shortcut(app.handle(), &initial_settings);
             apply_autostart(app.handle(), initial_settings.autostart);
 
+            // History coordinator — in-memory by default, optionally SQLCipher-backed on disk
+            let history_coord = build_history_coordinator(app.handle(), &initial_settings.history)
+                .unwrap_or_else(|e| {
+                    debug_log(
+                        app.handle(),
+                        "app",
+                        "error",
+                        format!("history init failed: {e}"),
+                    );
+                    HistoryCoordinator::new_in_memory(8 * 1024 * 1024)
+                        .expect("in-memory history fallback failed")
+                });
+            let history_coord = Arc::new(Mutex::new(history_coord));
+            app.manage(history_coord.clone());
+            let last_history_settings: Arc<Mutex<HistorySettings>> =
+                Arc::new(Mutex::new(initial_settings.history.clone()));
+
             // Register the clipboard listener exactly once
             start_clipboard_pattern_monitor(app.handle(), shared_patterns.clone());
+            start_history_capture(
+                app.handle(),
+                history_coord.clone(),
+                shared_patterns.clone(),
+            );
 
             // Listen for plugin events and show notification window for incoming messages
             let app_handle_events = app.handle().clone();
@@ -161,6 +194,8 @@ pub fn run() {
             let app_handle_listener = app.handle().clone();
             let target_coordinator_listener = target_coordinator.clone();
             let shared_patterns_listener = shared_patterns.clone();
+            let history_coord_listener = history_coord.clone();
+            let last_history_settings_listener = last_history_settings.clone();
             app.listen("settings-changed", move |_| {
                 if let Ok(sc) = SettingsCoordinator::from_handle(&app_handle_listener) {
                     let settings = sc.get_settings().clone();
@@ -184,6 +219,12 @@ pub fn run() {
                     if let Ok(mut coord) = target_coordinator_listener.lock() {
                         coord.reload_providers(&settings);
                     }
+                    apply_history_settings_change(
+                        &app_handle_listener,
+                        &history_coord_listener,
+                        &last_history_settings_listener,
+                        &settings.history,
+                    );
                 }
             });
 
@@ -484,6 +525,132 @@ fn get_debug_sources(
 }
 
 /// Registers the clipboard update listener exactly once.
+fn build_history_coordinator(
+    app: &AppHandle,
+    settings: &HistorySettings,
+) -> Result<HistoryCoordinator, String> {
+    let cap = mb_to_bytes(if settings.persist_to_disk {
+        settings.disk_buffer_mb
+    } else {
+        settings.memory_buffer_mb
+    });
+    history::build_coordinator(app, settings.persist_to_disk, cap)
+}
+
+fn mb_to_bytes(mb: u32) -> u64 {
+    (mb as u64).saturating_mul(1024 * 1024)
+}
+
+fn apply_history_settings_change(
+    app: &AppHandle,
+    coord: &Arc<Mutex<HistoryCoordinator>>,
+    last: &Arc<Mutex<HistorySettings>>,
+    new_settings: &HistorySettings,
+) {
+    let old = match last.lock() {
+        Ok(l) => l.clone(),
+        Err(_) => return,
+    };
+    let persistence_changed = old.persist_to_disk != new_settings.persist_to_disk;
+    let cap_now = mb_to_bytes(if new_settings.persist_to_disk {
+        new_settings.disk_buffer_mb
+    } else {
+        new_settings.memory_buffer_mb
+    });
+
+    if persistence_changed {
+        match history::build_coordinator(app, new_settings.persist_to_disk, cap_now) {
+            Ok(new_coord) => {
+                if let Err(e) = history::replace_coordinator(coord, new_coord) {
+                    debug_log(app, "app", "error", format!("history rebuild: {e}"));
+                }
+                debug_log(
+                    app,
+                    "app",
+                    "info",
+                    format!(
+                        "history persistence: {}",
+                        if new_settings.persist_to_disk {
+                            "disk"
+                        } else {
+                            "memory"
+                        }
+                    ),
+                );
+            }
+            Err(e) => debug_log(app, "app", "error", format!("history rebuild failed: {e}")),
+        }
+    } else if let Ok(mut guard) = coord.lock() {
+        let _ = guard.set_cap(cap_now);
+    }
+
+    if let Ok(mut guard) = last.lock() {
+        *guard = new_settings.clone();
+    }
+    history::notify_changed(app);
+}
+
+fn start_history_capture(
+    app: &AppHandle,
+    history_coord: Arc<Mutex<HistoryCoordinator>>,
+    shared_patterns: Arc<Mutex<Vec<Regex>>>,
+) {
+    let app_handle = app.clone();
+    app.listen(
+        "plugin:clipboard://clipboard-monitor/update",
+        move |_event| {
+            let enabled = SettingsCoordinator::from_handle(&app_handle)
+                .map(|sc| sc.get_settings().history.enabled)
+                .unwrap_or(false);
+            if !enabled {
+                return;
+            }
+            let clipboard = app_handle.state::<tauri_plugin_clipboard::Clipboard>();
+            if matches!(clipboard.has_text(), Ok(true)) {
+                if let Ok(text) = clipboard.read_text() {
+                    if text.is_empty() {
+                        return;
+                    }
+                    let matched = shared_patterns
+                        .lock()
+                        .ok()
+                        .and_then(|p| {
+                            p.iter()
+                                .find(|r| r.is_match(&text))
+                                .map(|r| r.as_str().to_string())
+                        });
+                    if let Ok(mut h) = history_coord.lock() {
+                        let _ = h.insert_text(text, matched);
+                    }
+                    history::notify_changed(&app_handle);
+                    return;
+                }
+            }
+            if matches!(clipboard.has_image(), Ok(true)) {
+                if let Ok(bytes) = clipboard.read_image_binary() {
+                    if bytes.is_empty() {
+                        return;
+                    }
+                    let (w, h) = parse_png_dimensions(&bytes).unwrap_or((0, 0));
+                    if let Ok(mut hist) = history_coord.lock() {
+                        let _ = hist.insert_image("image/png".into(), w, h, bytes, None);
+                    }
+                    history::notify_changed(&app_handle);
+                }
+            }
+        },
+    );
+}
+
+fn parse_png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 24 || &bytes[0..8] != b"\x89PNG\r\n\x1a\n" || &bytes[12..16] != b"IHDR" {
+        return None;
+    }
+    let w = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+    let h = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+    Some((w, h))
+}
+
 /// Patterns are read from `shared_patterns` on every event, so updates take effect immediately.
 fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<Vec<Regex>>>) {
     let app_handle = app.clone();
