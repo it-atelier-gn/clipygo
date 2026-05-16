@@ -381,13 +381,20 @@ impl SubprocessProvider {
     }
 }
 
-impl Drop for SubprocessProvider {
-    fn drop(&mut self) {
+impl SubprocessProvider {
+    fn terminate(&self) {
         if let Ok(mut state) = self.state.lock() {
             if let Some(mut handle) = state.process.take() {
                 let _ = handle.child.kill();
+                let _ = handle.child.wait();
             }
         }
+    }
+}
+
+impl Drop for SubprocessProvider {
+    fn drop(&mut self) {
+        self.terminate();
     }
 }
 
@@ -412,6 +419,10 @@ impl TargetProvider for SubprocessProvider {
                 error: s.last_error.clone(),
             })
             .unwrap_or_default()
+    }
+
+    fn shutdown(&self) {
+        self.terminate();
     }
 
     async fn get_targets(&self) -> Result<Vec<Target>, Box<dyn std::error::Error + Send + Sync>> {

@@ -75,6 +75,8 @@ pub trait TargetProvider: Send + Sync {
         }
     }
 
+    fn shutdown(&self) {}
+
     /// Returns `Some({schema, values})` if this provider supports configuration, `None` otherwise.
     async fn get_config_schema(
         &self,
@@ -178,7 +180,9 @@ impl TargetProviderCoordinator {
     /// Stops (kills) a running provider by name, allowing its binary to be replaced.
     /// The provider will be restarted on the next `reload_providers` call.
     pub fn stop_provider(&mut self, name: &str) {
-        self.providers.remove(name);
+        if let Some(provider) = self.providers.remove(name) {
+            provider.shutdown();
+        }
     }
 
     /// Looks up a provider by plugin id (from settings), returning a cloned Arc.
