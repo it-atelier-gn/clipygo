@@ -16,6 +16,13 @@
     version?: string;
   }
 
+  interface HistorySettings {
+    enabled: boolean;
+    memory_buffer_mb: number;
+    persist_to_disk: boolean;
+    disk_buffer_mb: number;
+  }
+
   interface AppSettings {
     autostart: boolean;
     global_shortcut: string;
@@ -26,6 +33,7 @@
     };
     registry_url: string;
     show_debug_log: boolean;
+    history: HistorySettings;
   }
 
   interface RegistryPlatform {
@@ -528,6 +536,86 @@
                   value={settings.global_shortcut}
                   placeholder="CTRL+F10"
                   on:input={(e) => { settings!.global_shortcut = e.currentTarget.value; scheduleSave(); }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="h3">🗂 Clipboard History</h2>
+            <p class="text-secondary">Captured clipboard items, viewable only inside clipygo</p>
+          </div>
+          <div class="card-body">
+            <div class="setting-group">
+              <div class="toggle-setting">
+                <div class="setting-info">
+                  <h3>Capture Clipboard</h3>
+                  <p class="text-secondary">Record every clipboard change into an encrypted history</p>
+                </div>
+                <div class="toggle-wrapper">
+                  <input
+                    type="checkbox"
+                    checked={settings.history.enabled}
+                    class="toggle-input"
+                    id="history_enabled"
+                    on:change={(e) => { settings!.history.enabled = e.currentTarget.checked; scheduleSave(); }}
+                  />
+                  <label for="history_enabled" class="toggle-slider"></label>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <div class="input-setting">
+                <h3>In-Memory Buffer (MB)</h3>
+                <p class="text-secondary">Cap for the always-on in-memory ring buffer</p>
+                <input
+                  class="input input-gaming"
+                  type="number"
+                  min="1"
+                  max="2048"
+                  value={settings.history.memory_buffer_mb}
+                  on:input={(e) => { settings!.history.memory_buffer_mb = Math.max(1, parseInt(e.currentTarget.value, 10) || 1); scheduleSave(); }}
+                />
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <div class="toggle-setting">
+                <div class="setting-info">
+                  <h3>Persist to Disk</h3>
+                  <p class="text-secondary">
+                    Survive restarts via encrypted SQLite. Content bytes encrypted with
+                    XChaCha20-Poly1305; key in OS keystore. Toggling discards current entries.
+                  </p>
+                </div>
+                <div class="toggle-wrapper">
+                  <input
+                    type="checkbox"
+                    checked={settings.history.persist_to_disk}
+                    class="toggle-input"
+                    id="history_persist"
+                    on:change={(e) => { settings!.history.persist_to_disk = e.currentTarget.checked; scheduleSave(); }}
+                  />
+                  <label for="history_persist" class="toggle-slider"></label>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <div class="input-setting">
+                <h3>On-Disk Buffer (MB)</h3>
+                <p class="text-secondary">Cap for the encrypted on-disk store (applies when persistence is on)</p>
+                <input
+                  class="input input-gaming"
+                  type="number"
+                  min="1"
+                  max="65536"
+                  value={settings.history.disk_buffer_mb}
+                  on:input={(e) => { settings!.history.disk_buffer_mb = Math.max(1, parseInt(e.currentTarget.value, 10) || 1); scheduleSave(); }}
                 />
               </div>
             </div>
