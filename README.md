@@ -8,11 +8,9 @@
 
 <p align="center">
   <a href="https://discord.gg/AJxzNdkw">
-    <img src="https://invidget.switchblade.xyz/AJxzNdkw" alt="Join the clipygo Discord">
+    <img src="https://img.shields.io/badge/Join%20the%20clipygo%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the clipygo Discord" height="40">
   </a>
 </p>
-
-<p align="center"><b>💬 Questions, ideas, or want to chat about clipygo? <a href="https://discord.gg/AJxzNdkw">Join the Discord</a>.</b></p>
 
 Clipboard monitor that watches for specific content patterns and lets you route them to configured targets — instantly, with a single keypress.
 
