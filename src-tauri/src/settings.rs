@@ -33,6 +33,37 @@ pub struct TargetProviderSettings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistorySettings {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_memory_mb")]
+    pub memory_buffer_mb: u32,
+    #[serde(default)]
+    pub persist_to_disk: bool,
+    #[serde(default = "default_disk_mb")]
+    pub disk_buffer_mb: u32,
+}
+
+fn default_memory_mb() -> u32 {
+    8
+}
+
+fn default_disk_mb() -> u32 {
+    200
+}
+
+impl Default for HistorySettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            memory_buffer_mb: default_memory_mb(),
+            persist_to_disk: false,
+            disk_buffer_mb: default_disk_mb(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub autostart: bool,
     pub global_shortcut: String,
@@ -42,6 +73,8 @@ pub struct AppSettings {
     pub registry_url: String,
     #[serde(default = "default_true")]
     pub show_debug_log: bool,
+    #[serde(default)]
+    pub history: HistorySettings,
 }
 
 fn default_true() -> bool {
@@ -73,6 +106,7 @@ impl Default for AppSettings {
             target_providers: TargetProviderSettings::default(),
             registry_url: DEFAULT_REGISTRY_URL.to_string(),
             show_debug_log: true,
+            history: HistorySettings::default(),
         }
     }
 }
