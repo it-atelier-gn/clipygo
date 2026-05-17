@@ -308,7 +308,9 @@ impl HistoryCoordinator {
             None => Ok(None),
             Some(c) => {
                 let plain = decrypt(&self.key, &c)?;
-                String::from_utf8(plain).map(Some).map_err(|e| e.to_string())
+                String::from_utf8(plain)
+                    .map(Some)
+                    .map_err(|e| e.to_string())
             }
         }
     }
@@ -357,11 +359,9 @@ impl HistoryCoordinator {
         loop {
             let used: i64 = self
                 .conn
-                .query_row(
-                    "SELECT COALESCE(SUM(size_bytes),0) FROM entries",
-                    [],
-                    |r| r.get(0),
-                )
+                .query_row("SELECT COALESCE(SUM(size_bytes),0) FROM entries", [], |r| {
+                    r.get(0)
+                })
                 .map_err(|e| e.to_string())?;
             if (used as u64) <= self.cap_bytes {
                 return Ok(());
@@ -385,7 +385,6 @@ impl HistoryCoordinator {
             }
         }
     }
-
 }
 
 fn init_schema(conn: &Connection) -> Result<(), String> {

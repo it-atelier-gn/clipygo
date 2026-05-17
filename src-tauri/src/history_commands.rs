@@ -27,9 +27,7 @@ pub fn history_list(
 }
 
 #[tauri::command]
-pub fn history_stats(
-    coord: State<'_, Arc<Mutex<HistoryCoordinator>>>,
-) -> Result<Stats, String> {
+pub fn history_stats(coord: State<'_, Arc<Mutex<HistoryCoordinator>>>) -> Result<Stats, String> {
     let guard = coord.lock().map_err(|_| "history lock poisoned")?;
     guard.stats()
 }

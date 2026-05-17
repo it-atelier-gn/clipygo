@@ -212,11 +212,7 @@ pub fn run() {
 
             // Register the clipboard listener exactly once
             start_clipboard_pattern_monitor(app.handle(), shared_patterns.clone());
-            start_history_capture(
-                app.handle(),
-                history_coord.clone(),
-                shared_patterns.clone(),
-            );
+            start_history_capture(app.handle(), history_coord.clone(), shared_patterns.clone());
 
             // Listen for plugin events and show notification window for incoming messages
             let app_handle_events = app.handle().clone();
@@ -317,15 +313,35 @@ pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
     app.global_shortcut().unregister_all().ok();
 
     if let Some(sc) = main_sc {
-        debug_log(app, "app", "info", format!("Registering main shortcut: {sc:?}"));
+        debug_log(
+            app,
+            "app",
+            "info",
+            format!("Registering main shortcut: {sc:?}"),
+        );
         if let Err(e) = app.global_shortcut().on_shortcut(sc, on_main_shortcut) {
-            debug_log(app, "app", "error", format!("Failed to register main shortcut: {e}"));
+            debug_log(
+                app,
+                "app",
+                "error",
+                format!("Failed to register main shortcut: {e}"),
+            );
         }
     }
     if let Some(sc) = history_sc {
-        debug_log(app, "app", "info", format!("Registering history shortcut: {sc:?}"));
+        debug_log(
+            app,
+            "app",
+            "info",
+            format!("Registering history shortcut: {sc:?}"),
+        );
         if let Err(e) = app.global_shortcut().on_shortcut(sc, on_history_shortcut) {
-            debug_log(app, "app", "error", format!("Failed to register history shortcut: {e}"));
+            debug_log(
+                app,
+                "app",
+                "error",
+                format!("Failed to register history shortcut: {e}"),
+            );
         }
     }
 }
@@ -334,7 +350,12 @@ fn parse_shortcut(app: &AppHandle, s: &str) -> Option<tauri_plugin_global_shortc
     match tauri_plugin_global_shortcut::Shortcut::from_str(s) {
         Ok(sc) => Some(sc),
         Err(e) => {
-            debug_log(app, "app", "error", format!("Unsupported key combination '{s}': {e}"));
+            debug_log(
+                app,
+                "app",
+                "error",
+                format!("Unsupported key combination '{s}': {e}"),
+            );
             None
         }
     }
@@ -345,7 +366,12 @@ pub fn on_main_shortcut(
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
     _event: tauri_plugin_global_shortcut::ShortcutEvent,
 ) {
-    debug_log(app, "app", "info", format!("Main shortcut pressed: {shortcut:?}"));
+    debug_log(
+        app,
+        "app",
+        "info",
+        format!("Main shortcut pressed: {shortcut:?}"),
+    );
     if let Some(window) = app.get_webview_window("main") {
         window.show().unwrap();
         window.set_focus().unwrap();
@@ -357,7 +383,12 @@ pub fn on_history_shortcut(
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
     _event: tauri_plugin_global_shortcut::ShortcutEvent,
 ) {
-    debug_log(app, "app", "info", format!("History shortcut pressed: {shortcut:?}"));
+    debug_log(
+        app,
+        "app",
+        "info",
+        format!("History shortcut pressed: {shortcut:?}"),
+    );
     open_history_window(app);
 }
 
@@ -385,7 +416,12 @@ pub fn open_history_window(app: &AppHandle) {
                 }
             });
         }
-        Err(e) => debug_log(app, "app", "error", format!("Failed to create history window: {e}")),
+        Err(e) => debug_log(
+            app,
+            "app",
+            "error",
+            format!("Failed to create history window: {e}"),
+        ),
     }
 }
 
@@ -707,14 +743,11 @@ fn start_history_capture(
                         }
                         *guard = Some(h);
                     }
-                    let matched = shared_patterns
-                        .lock()
-                        .ok()
-                        .and_then(|p| {
-                            p.iter()
-                                .find(|r| r.is_match(&text))
-                                .map(|r| r.as_str().to_string())
-                        });
+                    let matched = shared_patterns.lock().ok().and_then(|p| {
+                        p.iter()
+                            .find(|r| r.is_match(&text))
+                            .map(|r| r.as_str().to_string())
+                    });
                     if let Ok(mut hist) = history_coord.lock() {
                         let _ = hist.insert_text(text, matched);
                     }
