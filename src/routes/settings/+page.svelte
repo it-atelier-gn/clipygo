@@ -26,6 +26,7 @@
   interface AppSettings {
     autostart: boolean;
     global_shortcut: string;
+    history_shortcut: string;
     regex_list: string[];
     target_providers: {
       msteams: { enabled: boolean };
@@ -536,6 +537,19 @@
                   value={settings.global_shortcut}
                   placeholder="CTRL+F10"
                   on:input={(e) => { settings!.global_shortcut = e.currentTarget.value; scheduleSave(); }}
+                />
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <div class="input-setting">
+                <h3>History Hotkey</h3>
+                <p class="text-secondary">Hotkey to open the clipboard history window</p>
+                <input
+                  class="input input-gaming"
+                  value={settings.history_shortcut}
+                  placeholder="CTRL+SHIFT+H"
+                  on:input={(e) => { settings!.history_shortcut = e.currentTarget.value; scheduleSave(); }}
                 />
               </div>
             </div>

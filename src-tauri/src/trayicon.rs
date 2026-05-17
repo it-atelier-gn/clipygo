@@ -81,33 +81,7 @@ pub fn setup(app: &mut tauri::App) {
                     });
                 }
             }
-            "history" => {
-                if let Some(window) = app.get_webview_window("history") {
-                    window.show().unwrap();
-                    window.set_focus().unwrap();
-                } else {
-                    let history_window = WebviewWindowBuilder::new(
-                        app,
-                        "history",
-                        WebviewUrl::App("history".into()),
-                    )
-                    .title("History - clipygo")
-                    .devtools(true)
-                    .inner_size(900.0, 640.0)
-                    .decorations(false)
-                    .center()
-                    .build()
-                    .unwrap();
-
-                    let history_window_clone = history_window.clone();
-                    history_window.on_window_event(move |event| {
-                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                            api.prevent_close();
-                            history_window_clone.hide().unwrap();
-                        }
-                    });
-                }
-            }
+            "history" => crate::open_history_window(app),
             "debug" => {
                 if let Some(window) = app.get_webview_window("debug") {
                     window.show().unwrap();

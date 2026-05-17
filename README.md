@@ -16,7 +16,7 @@ Clipboard monitor that watches for specific content patterns and lets you route 
 
 It sits in your system tray, monitors the clipboard for regex matches (meeting links, Code With Me sessions, etc.), and pops up a compact window where you pick a target and hit Enter. Plugins handle the actual delivery — they're just executables that speak JSON over stdin/stdout.
 
-Captured clipboard items (text and images) also feed an encrypted **history** — viewable only inside clipygo via tray → *History…* — from where you can search, pin, copy back, or re-route any prior entry to a target. History is in-memory by default; opt-in disk persistence uses SQLite with content blobs encrypted via XChaCha20-Poly1305 (key in the OS keystore).
+Captured clipboard items (text and images) also feed an encrypted **history** — viewable via tray → *History…* or the configurable hotkey (default `Ctrl+Shift+H`) — from where you can search, pin, copy back, or re-route any prior entry to a target. The history window is fully keyboard-driven: type to filter, `↑/↓` to navigate, `Enter` to copy and close, `Ctrl+Enter` to resend to a target, `Ctrl+P` to pin, `Del` to remove, `Esc` to dismiss. History is in-memory by default; opt-in disk persistence uses SQLite with content blobs encrypted via XChaCha20-Poly1305 (key in the OS keystore).
 
 ---
 

@@ -38,8 +38,12 @@
   let query = '';
   let thumbnails: Record<string, string> = {};
   let unlistenChanged: UnlistenFn | null = null;
+  let unlistenFocus: UnlistenFn | null = null;
   let resendingId: string | null = null;
   let errorMsg = '';
+  let selectedIndex = 0;
+  let searchInput: HTMLInputElement | null = null;
+  let rowEls: Record<string, HTMLDivElement> = {};
 
   async function refresh() {
     try {
@@ -87,17 +91,23 @@
     }
   }
 
+  async function writePayloadToClipboard(payload: { kind: string; text?: string; image_base64?: string }) {
+    if (payload.kind === 'text' && payload.text != null) {
+      await invoke('history_suppress_next_text', { text: payload.text });
+      await writeText(payload.text);
+    } else if (payload.kind === 'image' && payload.image_base64) {
+      await invoke('history_suppress_next_image_b64', { imageBase64: payload.image_base64 });
+      await writeImageBase64(payload.image_base64);
+    }
+  }
+
   async function copyToClipboard(e: HistoryEntryView) {
     try {
       const payload = await invoke<{ kind: string; text?: string; image_base64?: string }>(
         'history_resend',
         { id: e.id },
       );
-      if (payload.kind === 'text' && payload.text != null) {
-        await writeText(payload.text);
-      } else if (payload.kind === 'image' && payload.image_base64) {
-        await writeImageBase64(payload.image_base64);
-      }
+      await writePayloadToClipboard(payload);
     } catch (err) {
       errorMsg = `Copy failed: ${err}`;
     }
@@ -110,11 +120,7 @@
         'history_resend',
         { id: e.id },
       );
-      if (payload.kind === 'text' && payload.text != null) {
-        await writeText(payload.text);
-      } else if (payload.kind === 'image' && payload.image_base64) {
-        await writeImageBase64(payload.image_base64);
-      }
+      await writePayloadToClipboard(payload);
       const main = await WebviewWindow.getByLabel('main');
       if (main) {
         await main.show();
@@ -163,22 +169,120 @@
   let searchDebounce: ReturnType<typeof setTimeout>;
   function onQueryInput(v: string) {
     query = v;
+    selectedIndex = 0;
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(refresh, 200);
+  }
+
+  function clampSelection() {
+    if (selectedIndex >= entries.length) selectedIndex = Math.max(0, entries.length - 1);
+    if (selectedIndex < 0) selectedIndex = 0;
+  }
+
+  function scrollSelectedIntoView() {
+    const sel = entries[selectedIndex];
+    if (!sel) return;
+    const el = rowEls[sel.id];
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function onKeyDown(ev: KeyboardEvent) {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      if (query) {
+        query = '';
+        await refresh();
+        searchInput?.focus();
+      } else {
+        await getCurrentWebviewWindow().hide();
+      }
+      return;
+    }
+
+    const onSearchField = ev.target === searchInput;
+    const printable = ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey;
+    if (printable && !onSearchField) {
+      searchInput?.focus();
+      return;
+    }
+
+    switch (ev.key) {
+      case 'ArrowDown':
+        ev.preventDefault();
+        if (entries.length) { selectedIndex = Math.min(entries.length - 1, selectedIndex + 1); scrollSelectedIntoView(); }
+        break;
+      case 'ArrowUp':
+        ev.preventDefault();
+        if (entries.length) { selectedIndex = Math.max(0, selectedIndex - 1); scrollSelectedIntoView(); }
+        break;
+      case 'Home':
+        ev.preventDefault();
+        selectedIndex = 0; scrollSelectedIntoView();
+        break;
+      case 'End':
+        ev.preventDefault();
+        selectedIndex = Math.max(0, entries.length - 1); scrollSelectedIntoView();
+        break;
+      case 'PageDown':
+        ev.preventDefault();
+        selectedIndex = Math.min(entries.length - 1, selectedIndex + 10); scrollSelectedIntoView();
+        break;
+      case 'PageUp':
+        ev.preventDefault();
+        selectedIndex = Math.max(0, selectedIndex - 10); scrollSelectedIntoView();
+        break;
+      case 'Enter': {
+        const e = entries[selectedIndex];
+        if (!e) return;
+        ev.preventDefault();
+        if (ev.ctrlKey || ev.metaKey) {
+          await resend(e);
+        } else {
+          await copyToClipboard(e);
+          await getCurrentWebviewWindow().hide();
+        }
+        break;
+      }
+      case 'Delete': {
+        const e = entries[selectedIndex];
+        if (!e) return;
+        ev.preventDefault();
+        await deleteEntry(e);
+        clampSelection();
+        break;
+      }
+      case 'p':
+      case 'P':
+        if (ev.ctrlKey || ev.metaKey) {
+          const e = entries[selectedIndex];
+          if (!e) return;
+          ev.preventDefault();
+          await togglePin(e);
+        }
+        break;
+    }
   }
 
   onMount(async () => {
     if (!browser) return;
     await refresh();
+    searchInput?.focus();
     unlistenChanged = await listen('history-changed', () => {
-      refresh();
+      refresh().then(clampSelection);
+    });
+    const win = getCurrentWebviewWindow();
+    unlistenFocus = await win.onFocusChanged(({ payload: focused }) => {
+      if (focused) searchInput?.focus();
     });
   });
 
   onDestroy(() => {
     if (unlistenChanged) unlistenChanged();
+    if (unlistenFocus) unlistenFocus();
   });
 </script>
+
+<svelte:window on:keydown={onKeyDown} />
 
 <div class="history-container">
   <div class="drag-strip" data-tauri-drag-region>
@@ -200,13 +304,14 @@
       class="input search-input"
       placeholder="Search…"
       value={query}
+      bind:this={searchInput}
       on:input={(e) => onQueryInput(e.currentTarget.value)}
     />
     <div class="filter-buttons">
-      <button class="filter-btn" class:filter-active={filterKind === 'all'} on:click={() => { filterKind = 'all'; refresh(); }}>All</button>
-      <button class="filter-btn" class:filter-active={filterKind === 'text'} on:click={() => { filterKind = 'text'; refresh(); }}>Text</button>
-      <button class="filter-btn" class:filter-active={filterKind === 'image'} on:click={() => { filterKind = 'image'; refresh(); }}>Images</button>
-      <button class="filter-btn" class:filter-active={pinnedOnly} on:click={() => { pinnedOnly = !pinnedOnly; refresh(); }}>📌 Pinned</button>
+      <button class="filter-btn" class:filter-active={filterKind === 'all'} on:click={() => { filterKind = 'all'; selectedIndex = 0; refresh(); }}>All</button>
+      <button class="filter-btn" class:filter-active={filterKind === 'text'} on:click={() => { filterKind = 'text'; selectedIndex = 0; refresh(); }}>Text</button>
+      <button class="filter-btn" class:filter-active={filterKind === 'image'} on:click={() => { filterKind = 'image'; selectedIndex = 0; refresh(); }}>Images</button>
+      <button class="filter-btn" class:filter-active={pinnedOnly} on:click={() => { pinnedOnly = !pinnedOnly; selectedIndex = 0; refresh(); }}>📌 Pinned</button>
     </div>
   </div>
 
@@ -218,8 +323,14 @@
     {#if entries.length === 0}
       <div class="empty-state">No history entries</div>
     {:else}
-      {#each entries as e (e.id)}
-        <div class="row" class:row-pinned={e.pinned}>
+      {#each entries as e, i (e.id)}
+        <div
+          class="row"
+          class:row-pinned={e.pinned}
+          class:row-selected={i === selectedIndex}
+          bind:this={rowEls[e.id]}
+          on:mousedown={() => (selectedIndex = i)}
+        >
           <div class="row-thumb">
             {#if e.kind_tag === 'image' && thumbnails[e.id]}
               <img src={thumbnails[e.id]} alt="" />
@@ -406,6 +517,11 @@
 
   .row-pinned {
     border-left: 3px solid var(--accent-warning);
+  }
+
+  .row-selected {
+    border-color: var(--accent-primary, #4ea1ff);
+    background: var(--bg-selected, rgba(78, 161, 255, 0.08));
   }
 
   .row-thumb {

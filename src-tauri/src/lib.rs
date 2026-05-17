@@ -56,6 +56,46 @@ pub fn debug_log(app: &AppHandle, source: &str, level: &str, message: String) {
 
 pub struct DebugLogQueue(pub Mutex<Vec<DebugLogEntry>>);
 
+pub struct LastClipHash(pub Mutex<Option<u64>>);
+
+pub fn hash_text(text: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    ("text", text).hash(&mut h);
+    h.finish()
+}
+
+pub fn hash_image(bytes: &[u8]) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    ("image", bytes).hash(&mut h);
+    h.finish()
+}
+
+#[tauri::command]
+fn history_suppress_next_text(state: tauri::State<'_, LastClipHash>, text: String) {
+    if let Ok(mut g) = state.0.lock() {
+        *g = Some(hash_text(&text));
+    }
+}
+
+#[tauri::command]
+fn history_suppress_next_image_b64(
+    state: tauri::State<'_, LastClipHash>,
+    image_base64: String,
+) -> Result<(), String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(image_base64.as_bytes())
+        .map_err(|e| e.to_string())?;
+    if let Ok(mut g) = state.0.lock() {
+        *g = Some(hash_image(&bytes));
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -95,7 +135,9 @@ pub fn run() {
             history_commands::history_delete,
             history_commands::history_clear,
             get_pending_debug_logs,
-            get_debug_sources
+            get_debug_sources,
+            history_suppress_next_text,
+            history_suppress_next_image_b64
         ])
         .setup(|app| {
             trayicon::setup(app);
@@ -141,6 +183,8 @@ pub fn run() {
 
             // Debug log queue — messages emitted before the debug window opens
             app.manage(DebugLogQueue(Mutex::new(Vec::new())));
+
+            app.manage(LastClipHash(Mutex::new(None)));
 
             // Shared patterns — updated on settings change, read by the single clipboard listener
             let shared_patterns: Arc<Mutex<Vec<Regex>>> =
@@ -267,55 +311,81 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
 }
 
 pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
-    let shortcut = match tauri_plugin_global_shortcut::Shortcut::from_str(&settings.global_shortcut)
-    {
-        Ok(shortcut) => shortcut,
-        Err(e) => {
-            debug_log(
-                app,
-                "app",
-                "error",
-                format!("Unsupported key combination: {e}"),
-            );
-            return;
-        }
-    };
+    let main_sc = parse_shortcut(app, &settings.global_shortcut);
+    let history_sc = parse_shortcut(app, &settings.history_shortcut);
 
-    if !app.global_shortcut().is_registered(shortcut) {
-        app.global_shortcut().unregister_all().unwrap();
-        debug_log(
-            app,
-            "app",
-            "info",
-            format!("Registering shortcut: {shortcut:?}"),
-        );
-        app.global_shortcut()
-            .on_shortcut(shortcut, on_shortcut)
-            .unwrap();
-    } else {
-        debug_log(
-            app,
-            "app",
-            "debug",
-            format!("Shortcut already registered: {shortcut:?}"),
-        );
+    app.global_shortcut().unregister_all().ok();
+
+    if let Some(sc) = main_sc {
+        debug_log(app, "app", "info", format!("Registering main shortcut: {sc:?}"));
+        if let Err(e) = app.global_shortcut().on_shortcut(sc, on_main_shortcut) {
+            debug_log(app, "app", "error", format!("Failed to register main shortcut: {e}"));
+        }
+    }
+    if let Some(sc) = history_sc {
+        debug_log(app, "app", "info", format!("Registering history shortcut: {sc:?}"));
+        if let Err(e) = app.global_shortcut().on_shortcut(sc, on_history_shortcut) {
+            debug_log(app, "app", "error", format!("Failed to register history shortcut: {e}"));
+        }
     }
 }
 
-pub fn on_shortcut(
+fn parse_shortcut(app: &AppHandle, s: &str) -> Option<tauri_plugin_global_shortcut::Shortcut> {
+    match tauri_plugin_global_shortcut::Shortcut::from_str(s) {
+        Ok(sc) => Some(sc),
+        Err(e) => {
+            debug_log(app, "app", "error", format!("Unsupported key combination '{s}': {e}"));
+            None
+        }
+    }
+}
+
+pub fn on_main_shortcut(
     app: &AppHandle,
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
     _event: tauri_plugin_global_shortcut::ShortcutEvent,
 ) {
-    debug_log(
-        app,
-        "app",
-        "info",
-        format!("Shortcut pressed: {shortcut:?}"),
-    );
+    debug_log(app, "app", "info", format!("Main shortcut pressed: {shortcut:?}"));
     if let Some(window) = app.get_webview_window("main") {
         window.show().unwrap();
         window.set_focus().unwrap();
+    }
+}
+
+pub fn on_history_shortcut(
+    app: &AppHandle,
+    shortcut: &tauri_plugin_global_shortcut::Shortcut,
+    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+) {
+    debug_log(app, "app", "info", format!("History shortcut pressed: {shortcut:?}"));
+    open_history_window(app);
+}
+
+pub fn open_history_window(app: &AppHandle) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if let Some(window) = app.get_webview_window("history") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    match WebviewWindowBuilder::new(app, "history", WebviewUrl::App("history".into()))
+        .title("History - clipygo")
+        .devtools(true)
+        .inner_size(900.0, 640.0)
+        .decorations(false)
+        .center()
+        .build()
+    {
+        Ok(window) => {
+            let clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = clone.hide();
+                }
+            });
+        }
+        Err(e) => debug_log(app, "app", "error", format!("Failed to create history window: {e}")),
     }
 }
 
@@ -441,6 +511,24 @@ mod tests {
     #[test]
     fn default_patterns_reject_empty_string() {
         assert!(!matches_any(""));
+    }
+
+    #[test]
+    fn hash_text_stable_and_distinguishes_content() {
+        assert_eq!(hash_text("hello"), hash_text("hello"));
+        assert_ne!(hash_text("hello"), hash_text("world"));
+        assert_ne!(hash_text(""), hash_text("hello"));
+    }
+
+    #[test]
+    fn hash_image_stable_and_distinguishes_bytes() {
+        assert_eq!(hash_image(&[1, 2, 3]), hash_image(&[1, 2, 3]));
+        assert_ne!(hash_image(&[1, 2, 3]), hash_image(&[1, 2, 4]));
+    }
+
+    #[test]
+    fn hash_text_and_image_disjoint() {
+        assert_ne!(hash_text("AB"), hash_image(b"AB"));
     }
 
     #[test]
@@ -606,10 +694,18 @@ fn start_history_capture(
                 return;
             }
             let clipboard = app_handle.state::<tauri_plugin_clipboard::Clipboard>();
+            let last_hash_state = app_handle.state::<LastClipHash>();
             if matches!(clipboard.has_text(), Ok(true)) {
                 if let Ok(text) = clipboard.read_text() {
                     if text.is_empty() {
                         return;
+                    }
+                    let h = hash_text(&text);
+                    if let Ok(mut guard) = last_hash_state.0.lock() {
+                        if *guard == Some(h) {
+                            return;
+                        }
+                        *guard = Some(h);
                     }
                     let matched = shared_patterns
                         .lock()
@@ -619,8 +715,8 @@ fn start_history_capture(
                                 .find(|r| r.is_match(&text))
                                 .map(|r| r.as_str().to_string())
                         });
-                    if let Ok(mut h) = history_coord.lock() {
-                        let _ = h.insert_text(text, matched);
+                    if let Ok(mut hist) = history_coord.lock() {
+                        let _ = hist.insert_text(text, matched);
                     }
                     history::notify_changed(&app_handle);
                     return;
@@ -631,9 +727,16 @@ fn start_history_capture(
                     if bytes.is_empty() {
                         return;
                     }
-                    let (w, h) = parse_png_dimensions(&bytes).unwrap_or((0, 0));
+                    let h = hash_image(&bytes);
+                    if let Ok(mut guard) = last_hash_state.0.lock() {
+                        if *guard == Some(h) {
+                            return;
+                        }
+                        *guard = Some(h);
+                    }
+                    let (w, ht) = parse_png_dimensions(&bytes).unwrap_or((0, 0));
                     if let Ok(mut hist) = history_coord.lock() {
-                        let _ = hist.insert_image("image/png".into(), w, h, bytes, None);
+                        let _ = hist.insert_image("image/png".into(), w, ht, bytes, None);
                     }
                     history::notify_changed(&app_handle);
                 }
