@@ -14,13 +14,6 @@ const KEYRING_USER: &str = "history-content-key";
 const MAX_TEXT_LEN_FOR_PREVIEW: usize = 200;
 const NONCE_LEN: usize = 24;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum HistoryKind {
-    Text { content: String },
-    Image { mime: String, width: u32, height: u32 },
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntryView {
     pub id: Uuid,

@@ -67,6 +67,8 @@ impl Default for HistorySettings {
 pub struct AppSettings {
     pub autostart: bool,
     pub global_shortcut: String,
+    #[serde(default = "default_history_shortcut")]
+    pub history_shortcut: String,
     pub regex_list: Vec<String>,
     pub target_providers: TargetProviderSettings,
     #[serde(default = "default_registry_url")]
@@ -81,6 +83,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_history_shortcut() -> String {
+    "Ctrl+Shift+H".to_string()
+}
+
 fn default_registry_url() -> String {
     DEFAULT_REGISTRY_URL.to_string()
 }
@@ -93,6 +99,7 @@ impl Default for AppSettings {
         Self {
             autostart: true,
             global_shortcut: "Ctrl+F10".to_string(),
+            history_shortcut: default_history_shortcut(),
             regex_list: vec![
                 // JetBrains Code With Me
                 r"https://code-with-me\.jetbrains\.com/[a-zA-Z0-9\-_]+".to_string(),
