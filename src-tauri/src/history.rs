@@ -417,7 +417,9 @@ fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, String> {
     use rand::TryRngCore;
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
     let mut nonce = [0u8; NONCE_LEN];
-    rand::rngs::OsRng.try_fill_bytes(&mut nonce).map_err(|e| e.to_string())?;
+    rand::rngs::OsRng
+        .try_fill_bytes(&mut nonce)
+        .map_err(|e| e.to_string())?;
     let ct = cipher
         .encrypt(XNonce::from_slice(&nonce), plaintext)
         .map_err(|e| format!("encrypt: {e}"))?;
