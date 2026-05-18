@@ -414,10 +414,10 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
 }
 
 fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, String> {
-    use rand::RngCore;
+    use rand::TryRngCore;
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
     let mut nonce = [0u8; NONCE_LEN];
-    rand::thread_rng().fill_bytes(&mut nonce);
+    rand::rngs::OsRng.try_fill_bytes(&mut nonce).map_err(|e| e.to_string())?;
     let ct = cipher
         .encrypt(XNonce::from_slice(&nonce), plaintext)
         .map_err(|e| format!("encrypt: {e}"))?;
@@ -439,9 +439,11 @@ fn decrypt(key: &[u8; 32], blob: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn random_key() -> [u8; 32] {
-    use rand::RngCore;
+    use rand::TryRngCore;
     let mut k = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut k);
+    rand::rngs::OsRng
+        .try_fill_bytes(&mut k)
+        .expect("OsRng fill_bytes failed");
     k
 }
 
