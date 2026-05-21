@@ -10,6 +10,6 @@
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging",
     "clipboard:allow-write-text",
-    "opener:default"
+    "clipboard:allow-write-image-base64"
   ]
 }
