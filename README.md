@@ -4,13 +4,6 @@
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/tauri-2.x-blue?logo=tauri)](https://tauri.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/it-atelier-gn/clipygo)
-
-<p align="center">
-  <a href="https://discord.gg/AJxzNdkw">
-    <img src="https://img.shields.io/badge/Join%20the%20clipygo%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the clipygo Discord" height="40">
-  </a>
-</p>
 
 Clipboard monitor that watches for specific content patterns and lets you route them to configured targets — instantly, with a single keypress.
 
