@@ -1,5 +1,6 @@
 mod history;
 mod history_commands;
+mod morph;
 mod settings;
 mod target_providers;
 mod targets;
@@ -57,6 +58,13 @@ pub fn debug_log(app: &AppHandle, source: &str, level: &str, message: String) {
 pub struct DebugLogQueue(pub Mutex<Vec<DebugLogEntry>>);
 
 pub struct LastClipHash(pub Mutex<Option<u64>>);
+
+/// Hash of a value Morph just wrote to the clipboard, used to ignore the
+/// monitor event triggered by our own write so transforms don't loop.
+pub struct MorphEcho(pub Mutex<Option<u64>>);
+
+/// Morph events queued for the notification window to drain when it first mounts.
+pub struct MorphNotifyQueue(pub Mutex<Vec<serde_json::Value>>);
 
 pub fn hash_text(text: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
@@ -137,7 +145,9 @@ pub fn run() {
             get_pending_debug_logs,
             get_debug_sources,
             history_suppress_next_text,
-            history_suppress_next_image_b64
+            history_suppress_next_image_b64,
+            get_pending_morph_events,
+            morph::morph_preview
         ])
         .setup(|app| {
             trayicon::setup(app);
@@ -185,10 +195,20 @@ pub fn run() {
             app.manage(DebugLogQueue(Mutex::new(Vec::new())));
 
             app.manage(LastClipHash(Mutex::new(None)));
+            app.manage(MorphEcho(Mutex::new(None)));
+            app.manage(MorphNotifyQueue(Mutex::new(Vec::new())));
 
             // Shared patterns — updated on settings change, read by the single clipboard listener
             let shared_patterns: Arc<Mutex<Vec<Regex>>> =
                 Arc::new(Mutex::new(compile_patterns(&initial_settings.regex_list)));
+
+            // Shared compiled Morph rules — recompiled on settings change.
+            let shared_morph_rules: Arc<Mutex<Vec<morph::CompiledMorphRule>>> =
+                Arc::new(Mutex::new(if initial_settings.morph_enabled {
+                    morph::compile_rules(&initial_settings.morph_rules)
+                } else {
+                    Vec::new()
+                }));
 
             setup_shortcut(app.handle(), &initial_settings);
             apply_autostart(app.handle(), initial_settings.autostart);
@@ -213,6 +233,7 @@ pub fn run() {
             // Register the clipboard listener exactly once
             start_clipboard_pattern_monitor(app.handle(), shared_patterns.clone());
             start_history_capture(app.handle(), history_coord.clone(), shared_patterns.clone());
+            start_morph_monitor(app.handle(), shared_morph_rules.clone());
 
             // Listen for plugin events and show notification window for incoming messages
             let app_handle_events = app.handle().clone();
@@ -234,6 +255,7 @@ pub fn run() {
             let app_handle_listener = app.handle().clone();
             let target_coordinator_listener = target_coordinator.clone();
             let shared_patterns_listener = shared_patterns.clone();
+            let shared_morph_rules_listener = shared_morph_rules.clone();
             let history_coord_listener = history_coord.clone();
             let last_history_settings_listener = last_history_settings.clone();
             app.listen("settings-changed", move |_| {
@@ -254,6 +276,19 @@ pub fn run() {
                             "app",
                             "info",
                             format!("Clipboard patterns updated: {} patterns", p.len()),
+                        );
+                    }
+                    if let Ok(mut r) = shared_morph_rules_listener.lock() {
+                        *r = if settings.morph_enabled {
+                            morph::compile_rules(&settings.morph_rules)
+                        } else {
+                            Vec::new()
+                        };
+                        debug_log(
+                            &app_handle_listener,
+                            "app",
+                            "info",
+                            format!("Morph rules updated: {} active", r.len()),
                         );
                     }
                     if let Ok(mut coord) = target_coordinator_listener.lock() {
@@ -309,6 +344,7 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
 pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
     let main_sc = parse_shortcut(app, &settings.global_shortcut);
     let history_sc = parse_shortcut(app, &settings.history_shortcut);
+    let morph_sc = parse_shortcut(app, &settings.morph_shortcut);
 
     app.global_shortcut().unregister_all().ok();
 
@@ -341,6 +377,22 @@ pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
                 "app",
                 "error",
                 format!("Failed to register history shortcut: {e}"),
+            );
+        }
+    }
+    if let Some(sc) = morph_sc {
+        debug_log(
+            app,
+            "app",
+            "info",
+            format!("Registering morph shortcut: {sc:?}"),
+        );
+        if let Err(e) = app.global_shortcut().on_shortcut(sc, on_morph_shortcut) {
+            debug_log(
+                app,
+                "app",
+                "error",
+                format!("Failed to register morph shortcut: {e}"),
             );
         }
     }
@@ -390,6 +442,53 @@ pub fn on_history_shortcut(
         format!("History shortcut pressed: {shortcut:?}"),
     );
     open_history_window(app);
+}
+
+pub fn on_morph_shortcut(
+    app: &AppHandle,
+    shortcut: &tauri_plugin_global_shortcut::Shortcut,
+    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+) {
+    debug_log(
+        app,
+        "app",
+        "info",
+        format!("Morph shortcut pressed: {shortcut:?}"),
+    );
+    open_morph_picker_window(app);
+}
+
+pub fn open_morph_picker_window(app: &AppHandle) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if let Some(window) = app.get_webview_window("morph-picker") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    match WebviewWindowBuilder::new(app, "morph-picker", WebviewUrl::App("morph-picker".into()))
+        .title("Morph - clipygo")
+        .devtools(true)
+        .inner_size(560.0, 540.0)
+        .decorations(false)
+        .center()
+        .build()
+    {
+        Ok(window) => {
+            let clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = clone.hide();
+                }
+            });
+        }
+        Err(e) => debug_log(
+            app,
+            "app",
+            "error",
+            format!("Failed to create morph picker window: {e}"),
+        ),
+    }
 }
 
 pub fn open_history_window(app: &AppHandle) {
@@ -637,6 +736,14 @@ fn get_pending_debug_logs(
 }
 
 #[tauri::command]
+fn get_pending_morph_events(
+    queue: tauri::State<'_, MorphNotifyQueue>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut events = queue.0.lock().map_err(|e| format!("Lock error: {e}"))?;
+    Ok(events.drain(..).collect())
+}
+
+#[tauri::command]
 fn get_debug_sources(
     coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
 ) -> Result<Vec<String>, String> {
@@ -817,4 +924,139 @@ fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<V
             }
         },
     );
+}
+
+/// Built-in Morph feature: on each clipboard update, apply the first matching
+/// rule in-place (rewriting the clipboard) and pop a notification window.
+/// Rules are read from `shared_rules` on every event, so updates take effect immediately.
+fn start_morph_monitor(app: &AppHandle, shared_rules: Arc<Mutex<Vec<morph::CompiledMorphRule>>>) {
+    let app_handle = app.clone();
+    app.listen(
+        "plugin:clipboard://clipboard-monitor/update",
+        move |_event| {
+            let clipboard = app_handle.state::<tauri_plugin_clipboard::Clipboard>();
+            let text = match clipboard.read_text() {
+                Ok(t) => t,
+                Err(_) => return,
+            };
+            if text.is_empty() {
+                return;
+            }
+            let h_in = hash_text(&text);
+
+            // Ignore the monitor event caused by our own write-back.
+            if let Some(echo) = app_handle.try_state::<MorphEcho>() {
+                if let Ok(mut g) = echo.0.lock() {
+                    if *g == Some(h_in) {
+                        *g = None;
+                        return;
+                    }
+                }
+            }
+
+            let result = {
+                let rules = match shared_rules.lock() {
+                    Ok(r) => r,
+                    Err(_) => return,
+                };
+                if rules.is_empty() {
+                    return;
+                }
+                morph::apply_first(&rules, &text)
+            };
+
+            if let Some(result) = result {
+                if let Some(echo) = app_handle.try_state::<MorphEcho>() {
+                    if let Ok(mut g) = echo.0.lock() {
+                        *g = Some(hash_text(&result.output));
+                    }
+                }
+                if let Err(e) = clipboard.write_text(result.output.clone()) {
+                    debug_log(
+                        &app_handle,
+                        "morph",
+                        "error",
+                        format!("write-back failed: {e}"),
+                    );
+                    return;
+                }
+                debug_log(
+                    &app_handle,
+                    "morph",
+                    "info",
+                    format!("Applied rule '{}'", result.rule_name),
+                );
+                show_morph_window(&app_handle, &result.rule_name, &text, &result.output);
+            }
+        },
+    );
+}
+
+/// Shows the Morph notification window (creating it if needed), styled like the
+/// incoming-message popup but fully independent of plugins.
+fn show_morph_window(app: &AppHandle, rule_name: &str, before: &str, after: &str) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    let payload = serde_json::json!({
+        "rule_name": rule_name,
+        "before": before,
+        "after": after,
+        "timestamp": SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64(),
+    });
+
+    if let Some(window) = app.get_webview_window("morph") {
+        let _ = app.emit("morph-event", &payload);
+        let _ = window.show();
+        return;
+    }
+
+    // First time: queue the event so the window can drain it once its JS mounts.
+    if let Some(queue) = app.try_state::<MorphNotifyQueue>() {
+        if let Ok(mut q) = queue.0.lock() {
+            if q.len() >= 50 {
+                q.remove(0);
+            }
+            q.push(payload.clone());
+        }
+    }
+
+    match WebviewWindowBuilder::new(app, "morph", WebviewUrl::App("morph".into()))
+        .title("clipygo — morph")
+        .inner_size(360.0, 300.0)
+        .decorations(false)
+        .always_on_top(true)
+        .focused(false)
+        .visible(false)
+        .devtools(true)
+        .build()
+    {
+        Ok(window) => {
+            if let Ok(Some(monitor)) = window.current_monitor() {
+                let screen = monitor.size();
+                let scale = monitor.scale_factor();
+                let x = (screen.width as f64 / scale) - 370.0;
+                let y = (screen.height as f64 / scale) - 310.0;
+                let _ = window
+                    .set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+            }
+            let _ = window.show();
+
+            let window_clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window_clone.hide();
+                }
+            });
+        }
+        Err(e) => debug_log(
+            app,
+            "morph",
+            "error",
+            format!("Failed to create morph window: {e}"),
+        ),
+    }
 }

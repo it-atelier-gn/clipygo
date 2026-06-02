@@ -23,6 +23,41 @@
     disk_buffer_mb: number;
   }
 
+  type MorphAction =
+    | { kind: 'replace'; find: string; replace: string }
+    | { kind: 'builtin'; transform: string };
+
+  interface MorphRule {
+    id: string;
+    name: string;
+    enabled: boolean;
+    pattern: string;
+    action: MorphAction;
+  }
+
+  const BUILTIN_TRANSFORMS: { id: string; label: string }[] = [
+    { id: 'strip_tracking', label: 'Strip URL tracking' },
+    { id: 'strip_html', label: 'Strip HTML tags' },
+    { id: 'json_pretty', label: 'JSON pretty' },
+    { id: 'json_minify', label: 'JSON minify' },
+    { id: 'xml_pretty', label: 'XML pretty' },
+    { id: 'base64_encode', label: 'Base64 encode' },
+    { id: 'base64_decode', label: 'Base64 decode' },
+    { id: 'url_encode', label: 'URL encode' },
+    { id: 'url_decode', label: 'URL decode' },
+    { id: 'uppercase', label: 'UPPERCASE' },
+    { id: 'lowercase', label: 'lowercase' },
+    { id: 'title_case', label: 'Title Case' },
+    { id: 'snake_case', label: 'snake_case' },
+    { id: 'camel_case', label: 'camelCase' },
+    { id: 'kebab_case', label: 'kebab-case' },
+    { id: 'trim', label: 'Trim whitespace' },
+    { id: 'collapse_whitespace', label: 'Collapse whitespace' },
+    { id: 'sort_lines', label: 'Sort lines' },
+    { id: 'dedupe_lines', label: 'Dedupe lines' },
+    { id: 'remove_empty_lines', label: 'Remove empty lines' },
+  ];
+
   interface AppSettings {
     autostart: boolean;
     global_shortcut: string;
@@ -35,6 +70,9 @@
     registry_url: string;
     show_debug_log: boolean;
     history: HistorySettings;
+    morph_enabled: boolean;
+    morph_shortcut: string;
+    morph_rules: MorphRule[];
   }
 
   interface RegistryPlatform {
@@ -244,6 +282,37 @@
       settings.regex_list = settings.regex_list.filter((_, i) => i !== index);
       scheduleSave();
     }
+  }
+
+  function addMorphRule() {
+    if (!settings) return;
+    const rule: MorphRule = {
+      id: crypto.randomUUID(),
+      name: 'New rule',
+      enabled: false,
+      pattern: '',
+      action: { kind: 'builtin', transform: 'trim' },
+    };
+    settings.morph_rules = [...settings.morph_rules, rule];
+    scheduleSave();
+  }
+
+  function removeMorphRule(index: number) {
+    if (!settings) return;
+    settings.morph_rules = settings.morph_rules.filter((_, i) => i !== index);
+    scheduleSave();
+  }
+
+  function setMorphActionKind(index: number, kind: 'replace' | 'builtin') {
+    if (!settings) return;
+    const rule = settings.morph_rules[index];
+    if (rule.action.kind === kind) return;
+    rule.action =
+      kind === 'replace'
+        ? { kind: 'replace', find: '', replace: '' }
+        : { kind: 'builtin', transform: 'trim' };
+    settings.morph_rules = settings.morph_rules;
+    scheduleSave();
   }
 
   async function testNewPlugin() {
@@ -632,6 +701,123 @@
                   on:input={(e) => { settings!.history.disk_buffer_mb = Math.max(1, parseInt(e.currentTarget.value, 10) || 1); scheduleSave(); }}
                 />
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Morph -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="h3">🪄 Morph</h2>
+            <p class="text-secondary">Rule-based, in-place clipboard transformations</p>
+          </div>
+          <div class="card-body">
+            <div class="setting-group">
+              <div class="toggle-setting">
+                <div class="setting-info">
+                  <h3>Enable Morph</h3>
+                  <p class="text-secondary">Apply matching rules automatically and rewrite the clipboard in place</p>
+                </div>
+                <div class="toggle-wrapper">
+                  <input
+                    type="checkbox"
+                    checked={settings.morph_enabled}
+                    class="toggle-input"
+                    id="morph_enabled"
+                    on:change={(e) => { settings!.morph_enabled = e.currentTarget.checked; scheduleSave(); }}
+                  />
+                  <label for="morph_enabled" class="toggle-slider"></label>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <div class="input-setting">
+                <h3>Manual Transform Hotkey</h3>
+                <p class="text-secondary">Opens a preview window to apply any transformation on demand</p>
+                <input
+                  class="input input-gaming"
+                  value={settings.morph_shortcut}
+                  placeholder="CTRL+SHIFT+M"
+                  on:input={(e) => { settings!.morph_shortcut = e.currentTarget.value; scheduleSave(); }}
+                />
+              </div>
+            </div>
+
+            <div class="morph-rules">
+              {#each settings.morph_rules as rule, index (rule.id)}
+                <div class="morph-rule">
+                  <div class="morph-rule-top">
+                    <div class="toggle-wrapper">
+                      <input
+                        type="checkbox"
+                        checked={rule.enabled}
+                        class="toggle-input"
+                        id="morph-rule-{rule.id}"
+                        on:change={(e) => { settings!.morph_rules[index].enabled = e.currentTarget.checked; scheduleSave(); }}
+                      />
+                      <label for="morph-rule-{rule.id}" class="toggle-slider"></label>
+                    </div>
+                    <input
+                      class="input morph-name"
+                      value={rule.name}
+                      placeholder="Rule name"
+                      on:input={(e) => { settings!.morph_rules[index].name = e.currentTarget.value; scheduleSave(); }}
+                    />
+                    <select
+                      class="input morph-kind"
+                      value={rule.action.kind}
+                      on:change={(e) => setMorphActionKind(index, e.currentTarget.value === 'replace' ? 'replace' : 'builtin')}
+                    >
+                      <option value="builtin">Built-in</option>
+                      <option value="replace">Regex replace</option>
+                    </select>
+                    <button type="button" class="btn btn-danger btn-sm" on:click={() => removeMorphRule(index)}>✕</button>
+                  </div>
+
+                  <div class="morph-rule-fields">
+                    <span class="morph-field-label">Match pattern (regex)</span>
+                    <input
+                      class="input morph-mono"
+                      value={rule.pattern}
+                      placeholder="e.g. ^https?://"
+                      on:input={(e) => { settings!.morph_rules[index].pattern = e.currentTarget.value; scheduleSave(); }}
+                    />
+
+                    {#if rule.action.kind === 'builtin'}
+                      <span class="morph-field-label">Transform</span>
+                      <select
+                        class="input"
+                        value={rule.action.transform}
+                        on:change={(e) => { (settings!.morph_rules[index].action as { kind: 'builtin'; transform: string }).transform = e.currentTarget.value; scheduleSave(); }}
+                      >
+                        {#each BUILTIN_TRANSFORMS as t}
+                          <option value={t.id}>{t.label}</option>
+                        {/each}
+                      </select>
+                    {:else}
+                      <span class="morph-field-label">Find (regex)</span>
+                      <input
+                        class="input morph-mono"
+                        value={rule.action.find}
+                        placeholder="^(\S+),\s+(\S+)$"
+                        on:input={(e) => { (settings!.morph_rules[index].action as { kind: 'replace'; find: string; replace: string }).find = e.currentTarget.value; scheduleSave(); }}
+                      />
+                      <span class="morph-field-label">Replace (use $1, $2 for groups)</span>
+                      <input
+                        class="input morph-mono"
+                        value={rule.action.replace}
+                        placeholder="$2 $1"
+                        on:input={(e) => { (settings!.morph_rules[index].action as { kind: 'replace'; find: string; replace: string }).replace = e.currentTarget.value; scheduleSave(); }}
+                      />
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+
+              <button type="button" class="btn btn-secondary btn-full" on:click={addMorphRule}>
+                + Add Rule
+              </button>
             </div>
           </div>
         </div>
@@ -1571,5 +1757,59 @@
   .array-item-input {
     flex: 1;
     min-width: 0;
+  }
+
+  /* Morph rules */
+  .morph-rules {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+
+  .morph-rule {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-md);
+  }
+
+  .morph-rule-top {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: var(--space-sm);
+    align-items: center;
+  }
+
+  .morph-name {
+    font-family: var(--font-gaming);
+    font-size: 0.85rem;
+  }
+
+  .morph-kind {
+    width: auto;
+    font-size: 0.8rem;
+  }
+
+  .morph-rule-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .morph-field-label {
+    font-family: var(--font-gaming);
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-top: var(--space-xs);
+  }
+
+  .morph-mono {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
   }
 </style>
