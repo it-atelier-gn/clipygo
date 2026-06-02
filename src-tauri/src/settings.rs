@@ -77,6 +77,16 @@ pub struct AppSettings {
     pub show_debug_log: bool,
     #[serde(default)]
     pub history: HistorySettings,
+    #[serde(default = "default_true")]
+    pub morph_enabled: bool,
+    #[serde(default = "default_morph_shortcut")]
+    pub morph_shortcut: String,
+    #[serde(default)]
+    pub morph_rules: Vec<crate::morph::MorphRule>,
+}
+
+fn default_morph_shortcut() -> String {
+    "Ctrl+Shift+M".to_string()
 }
 
 fn default_true() -> bool {
@@ -114,8 +124,45 @@ impl Default for AppSettings {
             registry_url: DEFAULT_REGISTRY_URL.to_string(),
             show_debug_log: true,
             history: HistorySettings::default(),
+            morph_enabled: true,
+            morph_shortcut: default_morph_shortcut(),
+            morph_rules: default_morph_rules(),
         }
     }
+}
+
+fn default_morph_rules() -> Vec<crate::morph::MorphRule> {
+    use crate::morph::{BuiltinTransform, MorphAction, MorphRule};
+    vec![
+        MorphRule {
+            id: "strip-tracking".to_string(),
+            name: "Strip URL tracking params".to_string(),
+            enabled: false,
+            pattern: r"https?://\S+[?&](utm_|gclid|fbclid)".to_string(),
+            action: MorphAction::Builtin {
+                transform: BuiltinTransform::StripTracking,
+            },
+        },
+        MorphRule {
+            id: "name-reorder".to_string(),
+            name: "Name: Last, First -> First Last".to_string(),
+            enabled: false,
+            pattern: r"^\S+,\s+\S+$".to_string(),
+            action: MorphAction::Replace {
+                find: r"^(\S+),\s+(\S+)$".to_string(),
+                replace: "$2 $1".to_string(),
+            },
+        },
+        MorphRule {
+            id: "json-pretty".to_string(),
+            name: "Pretty-print JSON".to_string(),
+            enabled: false,
+            pattern: r"^\s*[\{\[]".to_string(),
+            action: MorphAction::Builtin {
+                transform: BuiltinTransform::JsonPretty,
+            },
+        },
+    ]
 }
 
 pub struct SettingsCoordinator {
