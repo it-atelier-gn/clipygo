@@ -41,10 +41,13 @@ jobs:
 
       - name: Set version from tag
         shell: bash
+        env:
+          BUNDLE_EXT: ${{ matrix.bundle_ext }}
         run: |
           node -e "
           const fs = require('fs');
-          const v = process.env.GITHUB_REF_NAME.replace(/^v/, '');
+          const raw = process.env.GITHUB_REF_NAME.replace(/^v/, '');
+          const v = process.env.BUNDLE_EXT === 'msi' ? raw.replace(/-.*/, '') : raw;
           const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
           pkg.version = v;
           fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
