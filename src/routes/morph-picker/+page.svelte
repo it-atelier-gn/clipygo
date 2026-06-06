@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -137,15 +137,46 @@
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (changed) apply();
+    } else if (document.activeElement !== searchEl && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Route typing into the filter box even if it lost focus (e.g. window reshown).
+      if (e.key.length === 1) {
+        e.preventDefault();
+        query += e.key;
+        searchEl?.focus();
+        onSearch();
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        query = query.slice(0, -1);
+        searchEl?.focus();
+        onSearch();
+      }
     }
   }
 
+  async function onShow() {
+    query = '';
+    highlightIndex = 0;
+    await loadClipboard();
+    await tick();
+    searchEl?.focus();
+  }
+
+  let unlistenFocus: (() => void) | undefined;
+
   onMount(() => {
     if (!browser) return;
-    loadClipboard();
-    searchEl?.focus();
+    getCurrentWebviewWindow()
+      .onFocusChanged(({ payload: focused }) => {
+        if (focused) onShow();
+      })
+      .then((fn) => (unlistenFocus = fn));
+    onShow();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  });
+
+  onDestroy(() => {
+    if (unlistenFocus) unlistenFocus();
   });
 </script>
 
