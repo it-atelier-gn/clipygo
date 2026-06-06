@@ -36,6 +36,13 @@ pub fn command_matches(cmd: &ExecCommand, clipboard: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether a command should be eligible for direct auto-run on the hotkey.
+/// Only commands with an explicit, matching pattern qualify; an empty pattern
+/// makes a command "always available" in the picker but never auto-runnable.
+pub fn is_auto_run_match(cmd: &ExecCommand, clipboard: &str) -> bool {
+    !cmd.pattern.trim().is_empty() && cmd.enabled && command_matches(cmd, clipboard)
+}
+
 pub fn parse_args(args: &str, clipboard: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
@@ -154,6 +161,27 @@ mod tests {
     #[test]
     fn invalid_pattern_never_matches() {
         assert!(!command_matches(&cmd("[invalid", "x", ""), "anything"));
+    }
+
+    #[test]
+    fn empty_pattern_is_not_auto_run_candidate() {
+        assert!(!is_auto_run_match(&cmd("", "x", ""), "anything"));
+    }
+
+    #[test]
+    fn explicit_matching_pattern_is_auto_run_candidate() {
+        assert!(is_auto_run_match(
+            &cmd(r"^https?://", "x", ""),
+            "https://a.com"
+        ));
+        assert!(!is_auto_run_match(&cmd(r"^https?://", "x", ""), "no url"));
+    }
+
+    #[test]
+    fn disabled_command_is_not_auto_run_candidate() {
+        let mut c = cmd(r"^https?://", "x", "");
+        c.enabled = false;
+        assert!(!is_auto_run_match(&c, "https://a.com"));
     }
 
     #[test]

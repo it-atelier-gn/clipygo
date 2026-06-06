@@ -514,7 +514,7 @@ fn handle_exec_shortcut(app: &AppHandle) {
         let matches: Vec<&exec::ExecCommand> = settings
             .exec_commands
             .iter()
-            .filter(|c| c.enabled && exec::command_matches(c, &clipboard))
+            .filter(|c| exec::is_auto_run_match(c, &clipboard))
             .collect();
         if matches.len() == 1 {
             let cmd = matches[0];

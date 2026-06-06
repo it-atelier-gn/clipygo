@@ -958,7 +958,7 @@
               <div class="toggle-setting">
                 <div class="setting-info">
                   <h3>Auto-run on match</h3>
-                  <p class="text-secondary">When the hotkey is pressed and exactly one command's pattern matches the clipboard, run it directly instead of opening the picker</p>
+                  <p class="text-secondary">When the hotkey is pressed and exactly one command with a (non-empty) match pattern matches the clipboard, run it directly instead of opening the picker. Commands without a pattern never auto-run — they only appear in the picker.</p>
                 </div>
                 <div class="toggle-wrapper">
                   <input
@@ -1034,7 +1034,7 @@
                       on:input={(e) => { settings!.exec_commands[index].working_dir = e.currentTarget.value; scheduleSave(); }}
                     />
 
-                    <span class="morph-field-label">Match pattern (regex, optional — empty = always available)</span>
+                    <span class="morph-field-label">Match pattern (regex, optional — empty = always in picker, never auto-runs)</span>
                     <input
                       class="input morph-mono"
                       value={cmd.pattern}
