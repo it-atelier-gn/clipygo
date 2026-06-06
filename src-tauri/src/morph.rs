@@ -27,9 +27,16 @@ pub enum BuiltinTransform {
     CamelCase,
     KebabCase,
     StripHtml,
+    HtmlEncode,
     SortLines,
     DedupeLines,
     RemoveEmptyLines,
+    ReverseLines,
+    TrimLines,
+    NormalizeNewlines,
+    RemoveDiacritics,
+    Slugify,
+    StraightenQuotes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,6 +123,62 @@ pub fn morph_preview(text: String, transform: BuiltinTransform) -> String {
     apply_builtin(transform, &text)
 }
 
+#[derive(Debug, Serialize)]
+pub struct MorphTestResult {
+    pub matched: bool,
+    pub changed: bool,
+    pub output: String,
+    pub error: Option<String>,
+}
+
+/// Compiles a single rule and runs it against `input` so the settings UI can
+/// preview what a rule does while it is being authored. Unlike the live monitor
+/// this ignores the rule's `enabled` flag and reports regex errors verbatim.
+#[tauri::command]
+pub fn morph_test_rule(rule: MorphRule, input: String) -> MorphTestResult {
+    let pattern = match Regex::new(&rule.pattern) {
+        Ok(re) => re,
+        Err(e) => {
+            return MorphTestResult {
+                matched: false,
+                changed: false,
+                output: input,
+                error: Some(format!("Invalid match pattern: {e}")),
+            }
+        }
+    };
+    let action = match &rule.action {
+        MorphAction::Replace { find, replace } => match Regex::new(find) {
+            Ok(re) => CompiledAction::Replace {
+                find: re,
+                replace: replace.clone(),
+            },
+            Err(e) => {
+                return MorphTestResult {
+                    matched: false,
+                    changed: false,
+                    output: input,
+                    error: Some(format!("Invalid find pattern: {e}")),
+                }
+            }
+        },
+        MorphAction::Builtin { transform } => CompiledAction::Builtin(*transform),
+    };
+    let matched = pattern.is_match(&input);
+    let output = if matched {
+        apply_action(&action, &input)
+    } else {
+        input.clone()
+    };
+    let changed = output != input;
+    MorphTestResult {
+        matched,
+        changed,
+        output,
+        error: None,
+    }
+}
+
 fn apply_action(action: &CompiledAction, input: &str) -> String {
     match action {
         CompiledAction::Replace { find, replace } => {
@@ -144,11 +207,18 @@ fn apply_builtin(transform: BuiltinTransform, input: &str) -> String {
         BuiltinTransform::KebabCase => join_words(input, "-", true),
         BuiltinTransform::CamelCase => camel_case(input),
         BuiltinTransform::StripHtml => strip_html(input),
+        BuiltinTransform::HtmlEncode => html_encode(input),
         BuiltinTransform::SortLines => transform_lines(input, |lines| lines.sort()),
         BuiltinTransform::DedupeLines => dedupe_lines(input),
         BuiltinTransform::RemoveEmptyLines => {
             transform_lines(input, |lines| lines.retain(|l| !l.trim().is_empty()))
         }
+        BuiltinTransform::ReverseLines => transform_lines(input, |lines| lines.reverse()),
+        BuiltinTransform::TrimLines => trim_lines(input),
+        BuiltinTransform::NormalizeNewlines => normalize_newlines(input),
+        BuiltinTransform::RemoveDiacritics => remove_diacritics(input),
+        BuiltinTransform::Slugify => slugify(input),
+        BuiltinTransform::StraightenQuotes => straighten_quotes(input),
     }
 }
 
@@ -355,6 +425,109 @@ fn strip_html(input: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&#39;", "'");
     collapse_whitespace(&decoded)
+}
+
+fn html_encode(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for c in input.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+fn trim_lines(input: &str) -> String {
+    input
+        .lines()
+        .map(|l| l.trim())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn normalize_newlines(input: &str) -> String {
+    input.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn straighten_quotes(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| match c {
+            '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{00AB}' | '\u{00BB}' => '"',
+            '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{2039}' | '\u{203A}' => '\'',
+            '\u{2013}' | '\u{2014}' | '\u{2212}' => '-',
+            '\u{00A0}' => ' ',
+            other => other,
+        })
+        .collect::<String>()
+        .replace('\u{2026}', "...")
+}
+
+fn deaccent(c: char) -> Option<&'static str> {
+    Some(match c {
+        'á' | 'à' | 'â' | 'ä' | 'ã' | 'å' | 'ā' | 'ă' | 'ą' => "a",
+        'Á' | 'À' | 'Â' | 'Ä' | 'Ã' | 'Å' | 'Ā' | 'Ă' | 'Ą' => "A",
+        'é' | 'è' | 'ê' | 'ë' | 'ē' | 'ė' | 'ę' | 'ě' => "e",
+        'É' | 'È' | 'Ê' | 'Ë' | 'Ē' | 'Ė' | 'Ę' | 'Ě' => "E",
+        'í' | 'ì' | 'î' | 'ï' | 'ī' | 'į' => "i",
+        'Í' | 'Ì' | 'Î' | 'Ï' | 'Ī' | 'Į' => "I",
+        'ó' | 'ò' | 'ô' | 'ö' | 'õ' | 'ø' | 'ō' => "o",
+        'Ó' | 'Ò' | 'Ô' | 'Ö' | 'Õ' | 'Ø' | 'Ō' => "O",
+        'ú' | 'ù' | 'û' | 'ü' | 'ū' | 'ů' => "u",
+        'Ú' | 'Ù' | 'Û' | 'Ü' | 'Ū' | 'Ů' => "U",
+        'ç' | 'ć' | 'č' => "c",
+        'Ç' | 'Ć' | 'Č' => "C",
+        'ñ' | 'ń' => "n",
+        'Ñ' | 'Ń' => "N",
+        'ý' | 'ÿ' => "y",
+        'Ý' | 'Ÿ' => "Y",
+        'š' => "s",
+        'Š' => "S",
+        'ž' => "z",
+        'Ž' => "Z",
+        'ð' => "d",
+        'Ð' => "D",
+        'ß' => "ss",
+        'æ' => "ae",
+        'Æ' => "AE",
+        'œ' => "oe",
+        'Œ' => "OE",
+        'þ' => "th",
+        'Þ' => "TH",
+        _ => return None,
+    })
+}
+
+fn remove_diacritics(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for c in input.chars() {
+        match deaccent(c) {
+            Some(s) => out.push_str(s),
+            None => out.push(c),
+        }
+    }
+    out
+}
+
+fn slugify(input: &str) -> String {
+    let normalized = remove_diacritics(input).to_lowercase();
+    let mut out = String::with_capacity(normalized.len());
+    let mut prev_dash = false;
+    for c in normalized.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+            prev_dash = false;
+        } else if !out.is_empty() && !prev_dash {
+            out.push('-');
+            prev_dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 fn transform_lines<F: FnOnce(&mut Vec<&str>)>(input: &str, f: F) -> String {
@@ -638,6 +811,100 @@ mod tests {
             apply_builtin(BuiltinTransform::RemoveEmptyLines, "a\n\n  \nb"),
             "a\nb"
         );
+    }
+
+    #[test]
+    fn html_encode_escapes_special_chars() {
+        assert_eq!(
+            apply_builtin(BuiltinTransform::HtmlEncode, "<a href=\"x\">a & b</a>"),
+            "&lt;a href=&quot;x&quot;&gt;a &amp; b&lt;/a&gt;"
+        );
+    }
+
+    #[test]
+    fn reverse_lines_builtin() {
+        assert_eq!(
+            apply_builtin(BuiltinTransform::ReverseLines, "a\nb\nc"),
+            "c\nb\na"
+        );
+    }
+
+    #[test]
+    fn trim_lines_builtin() {
+        assert_eq!(
+            apply_builtin(BuiltinTransform::TrimLines, "  a  \n\tb\t\nc"),
+            "a\nb\nc"
+        );
+    }
+
+    #[test]
+    fn normalize_newlines_builtin() {
+        assert_eq!(
+            apply_builtin(BuiltinTransform::NormalizeNewlines, "a\r\nb\rc\nd"),
+            "a\nb\nc\nd"
+        );
+    }
+
+    #[test]
+    fn remove_diacritics_builtin() {
+        assert_eq!(
+            apply_builtin(BuiltinTransform::RemoveDiacritics, "Crème brûlée Straße"),
+            "Creme brulee Strasse"
+        );
+    }
+
+    #[test]
+    fn slugify_builtin() {
+        assert_eq!(
+            apply_builtin(BuiltinTransform::Slugify, "  Héllo, World! 2 "),
+            "hello-world-2"
+        );
+    }
+
+    #[test]
+    fn straighten_quotes_builtin() {
+        assert_eq!(
+            apply_builtin(
+                BuiltinTransform::StraightenQuotes,
+                "\u{201C}hi\u{201D} \u{2018}x\u{2019} \u{2014} y\u{2026}"
+            ),
+            "\"hi\" 'x' - y..."
+        );
+    }
+
+    #[test]
+    fn morph_test_rule_reports_match_and_change() {
+        let rule = builtin_rule("upper", r"^\w+$", BuiltinTransform::Uppercase);
+        let res = morph_test_rule(rule, "hello".to_string());
+        assert!(res.matched);
+        assert!(res.changed);
+        assert_eq!(res.output, "HELLO");
+        assert!(res.error.is_none());
+    }
+
+    #[test]
+    fn morph_test_rule_reports_no_match() {
+        let rule = builtin_rule("upper", r"^\d+$", BuiltinTransform::Uppercase);
+        let res = morph_test_rule(rule, "hello".to_string());
+        assert!(!res.matched);
+        assert!(!res.changed);
+        assert_eq!(res.output, "hello");
+    }
+
+    #[test]
+    fn morph_test_rule_reports_invalid_pattern() {
+        let rule = builtin_rule("bad", "[invalid", BuiltinTransform::Trim);
+        let res = morph_test_rule(rule, "x".to_string());
+        assert!(res.error.is_some());
+        assert!(!res.matched);
+    }
+
+    #[test]
+    fn morph_test_rule_replace_with_groups() {
+        let rule = replace_rule("reorder", r"^\S+,\s+\S+$", r"^(\S+),\s+(\S+)$", "$2 $1");
+        let res = morph_test_rule(rule, "Doe, John".to_string());
+        assert!(res.matched);
+        assert_eq!(res.output, "John Doe");
     }
 
     #[test]
