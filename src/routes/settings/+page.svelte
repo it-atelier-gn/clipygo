@@ -35,9 +35,21 @@
     action: MorphAction;
   }
 
+  interface ExecCommand {
+    id: string;
+    name: string;
+    enabled: boolean;
+    pattern: string;
+    path: string;
+    args: string;
+    working_dir: string;
+    pipe_stdin: boolean;
+  }
+
   const BUILTIN_TRANSFORMS: { id: string; label: string }[] = [
     { id: 'strip_tracking', label: 'Strip URL tracking' },
     { id: 'strip_html', label: 'Strip HTML tags' },
+    { id: 'html_encode', label: 'HTML encode' },
     { id: 'json_pretty', label: 'JSON pretty' },
     { id: 'json_minify', label: 'JSON minify' },
     { id: 'xml_pretty', label: 'XML pretty' },
@@ -51,9 +63,15 @@
     { id: 'snake_case', label: 'snake_case' },
     { id: 'camel_case', label: 'camelCase' },
     { id: 'kebab_case', label: 'kebab-case' },
+    { id: 'slugify', label: 'Slugify' },
+    { id: 'remove_diacritics', label: 'Remove accents' },
+    { id: 'straighten_quotes', label: 'Straighten quotes/dashes' },
     { id: 'trim', label: 'Trim whitespace' },
     { id: 'collapse_whitespace', label: 'Collapse whitespace' },
+    { id: 'trim_lines', label: 'Trim each line' },
+    { id: 'normalize_newlines', label: 'Normalize newlines (LF)' },
     { id: 'sort_lines', label: 'Sort lines' },
+    { id: 'reverse_lines', label: 'Reverse lines' },
     { id: 'dedupe_lines', label: 'Dedupe lines' },
     { id: 'remove_empty_lines', label: 'Remove empty lines' },
   ];
@@ -73,6 +91,9 @@
     morph_enabled: boolean;
     morph_shortcut: string;
     morph_rules: MorphRule[];
+    exec_enabled: boolean;
+    exec_shortcut: string;
+    exec_commands: ExecCommand[];
   }
 
   interface RegistryPlatform {
@@ -312,6 +333,74 @@
         ? { kind: 'replace', find: '', replace: '' }
         : { kind: 'builtin', transform: 'trim' };
     settings.morph_rules = settings.morph_rules;
+    scheduleSave();
+  }
+
+  interface MorphTestResult {
+    matched: boolean;
+    changed: boolean;
+    output: string;
+    error: string | null;
+  }
+
+  interface MorphTestState {
+    input: string;
+    open: boolean;
+    result: MorphTestResult | null;
+  }
+
+  let morphTests: Record<string, MorphTestState> = {};
+  let morphTestTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+  function ensureTest(id: string): MorphTestState {
+    if (!morphTests[id]) morphTests[id] = { input: '', open: false, result: null };
+    return morphTests[id];
+  }
+
+  function toggleTest(rule: MorphRule) {
+    const t = ensureTest(rule.id);
+    t.open = !t.open;
+    morphTests = morphTests;
+    if (t.open && t.input) runMorphTest(rule);
+  }
+
+  async function runMorphTest(rule: MorphRule) {
+    const t = ensureTest(rule.id);
+    try {
+      t.result = await invoke<MorphTestResult>('morph_test_rule', { rule, input: t.input });
+    } catch (e) {
+      t.result = { matched: false, changed: false, output: '', error: String(e) };
+    }
+    morphTests = morphTests;
+  }
+
+  function onTestInput(rule: MorphRule, value: string) {
+    const t = ensureTest(rule.id);
+    t.input = value;
+    morphTests = morphTests;
+    clearTimeout(morphTestTimers[rule.id]);
+    morphTestTimers[rule.id] = setTimeout(() => runMorphTest(rule), 150);
+  }
+
+  function addExecCommand() {
+    if (!settings) return;
+    const cmd: ExecCommand = {
+      id: crypto.randomUUID(),
+      name: 'New command',
+      enabled: false,
+      pattern: '',
+      path: '',
+      args: '',
+      working_dir: '',
+      pipe_stdin: false,
+    };
+    settings.exec_commands = [...settings.exec_commands, cmd];
+    scheduleSave();
+  }
+
+  function removeExecCommand(index: number) {
+    if (!settings) return;
+    settings.exec_commands = settings.exec_commands.filter((_, i) => i !== index);
     scheduleSave();
   }
 
@@ -812,11 +901,161 @@
                       />
                     {/if}
                   </div>
+
+                  <div class="morph-test">
+                    <button type="button" class="morph-test-toggle" on:click={() => toggleTest(rule)}>
+                      {morphTests[rule.id]?.open ? '▾' : '▸'} Test rule
+                    </button>
+                    {#if morphTests[rule.id]?.open}
+                      <textarea
+                        class="input morph-mono morph-test-input"
+                        rows="3"
+                        placeholder="Paste sample text to test this rule against…"
+                        value={morphTests[rule.id]?.input ?? ''}
+                        on:input={(e) => onTestInput(rule, e.currentTarget.value)}
+                      ></textarea>
+                      {#if morphTests[rule.id]?.result}
+                        {@const res = morphTests[rule.id].result!}
+                        {#if res.error}
+                          <div class="morph-test-status err">⚠ {res.error}</div>
+                        {:else}
+                          <div class="morph-test-status">
+                            <span class="badge {res.matched ? 'badge-ok' : 'badge-muted'}">
+                              {res.matched ? 'Pattern matches' : 'No match'}
+                            </span>
+                            {#if res.matched}
+                              <span class="badge {res.changed ? 'badge-ok' : 'badge-muted'}">
+                                {res.changed ? 'Output changed' : 'No change'}
+                              </span>
+                            {/if}
+                          </div>
+                          {#if res.matched}
+                            <span class="morph-field-label">Result</span>
+                            <pre class="morph-test-output">{res.output}</pre>
+                          {/if}
+                        {/if}
+                      {/if}
+                    {/if}
+                  </div>
                 </div>
               {/each}
 
               <button type="button" class="btn btn-secondary btn-full" on:click={addMorphRule}>
                 + Add Rule
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Execute -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="h3">⚡ Execute</h2>
+            <p class="text-secondary">Launch external commands from the clipboard</p>
+          </div>
+          <div class="card-body">
+            <div class="setting-group">
+              <div class="toggle-setting">
+                <div class="setting-info">
+                  <h3>Auto-run on match</h3>
+                  <p class="text-secondary">When the hotkey is pressed and exactly one command's pattern matches the clipboard, run it directly instead of opening the picker</p>
+                </div>
+                <div class="toggle-wrapper">
+                  <input
+                    type="checkbox"
+                    checked={settings.exec_enabled}
+                    class="toggle-input"
+                    id="exec_enabled"
+                    on:change={(e) => { settings!.exec_enabled = e.currentTarget.checked; scheduleSave(); }}
+                  />
+                  <label for="exec_enabled" class="toggle-slider"></label>
+                </div>
+              </div>
+            </div>
+
+            <div class="setting-group">
+              <div class="input-setting">
+                <h3>Execute Hotkey</h3>
+                <p class="text-secondary">Opens the command picker (or auto-runs a single matching command)</p>
+                <input
+                  class="input input-gaming"
+                  value={settings.exec_shortcut}
+                  placeholder="CTRL+SHIFT+E"
+                  on:input={(e) => { settings!.exec_shortcut = e.currentTarget.value; scheduleSave(); }}
+                />
+              </div>
+            </div>
+
+            <div class="morph-rules">
+              {#each settings.exec_commands as cmd, index (cmd.id)}
+                <div class="morph-rule">
+                  <div class="morph-rule-top">
+                    <div class="toggle-wrapper">
+                      <input
+                        type="checkbox"
+                        checked={cmd.enabled}
+                        class="toggle-input"
+                        id="exec-cmd-{cmd.id}"
+                        on:change={(e) => { settings!.exec_commands[index].enabled = e.currentTarget.checked; scheduleSave(); }}
+                      />
+                      <label for="exec-cmd-{cmd.id}" class="toggle-slider"></label>
+                    </div>
+                    <input
+                      class="input morph-name"
+                      value={cmd.name}
+                      placeholder="Command name"
+                      on:input={(e) => { settings!.exec_commands[index].name = e.currentTarget.value; scheduleSave(); }}
+                    />
+                    <button type="button" class="btn btn-danger btn-sm" on:click={() => removeExecCommand(index)}>✕</button>
+                  </div>
+
+                  <div class="morph-rule-fields">
+                    <span class="morph-field-label">Executable path</span>
+                    <input
+                      class="input morph-mono"
+                      value={cmd.path}
+                      placeholder="e.g. C:\Windows\System32\notepad.exe"
+                      on:input={(e) => { settings!.exec_commands[index].path = e.currentTarget.value; scheduleSave(); }}
+                    />
+
+                    <span class="morph-field-label">Arguments (use &#123;clipboard&#125; to insert clipboard text)</span>
+                    <input
+                      class="input morph-mono"
+                      value={cmd.args}
+                      placeholder={'--input {clipboard}'}
+                      on:input={(e) => { settings!.exec_commands[index].args = e.currentTarget.value; scheduleSave(); }}
+                    />
+
+                    <span class="morph-field-label">Working directory (optional)</span>
+                    <input
+                      class="input morph-mono"
+                      value={cmd.working_dir}
+                      placeholder="e.g. C:\Projects"
+                      on:input={(e) => { settings!.exec_commands[index].working_dir = e.currentTarget.value; scheduleSave(); }}
+                    />
+
+                    <span class="morph-field-label">Match pattern (regex, optional — empty = always available)</span>
+                    <input
+                      class="input morph-mono"
+                      value={cmd.pattern}
+                      placeholder="e.g. ^https?://"
+                      on:input={(e) => { settings!.exec_commands[index].pattern = e.currentTarget.value; scheduleSave(); }}
+                    />
+
+                    <label class="exec-check">
+                      <input
+                        type="checkbox"
+                        checked={cmd.pipe_stdin}
+                        on:change={(e) => { settings!.exec_commands[index].pipe_stdin = e.currentTarget.checked; scheduleSave(); }}
+                      />
+                      Pipe clipboard to the command's standard input
+                    </label>
+                  </div>
+                </div>
+              {/each}
+
+              <button type="button" class="btn btn-secondary btn-full" on:click={addExecCommand}>
+                + Add Command
               </button>
             </div>
           </div>
@@ -1811,5 +2050,91 @@
   .morph-mono {
     font-family: var(--font-mono);
     font-size: 0.8rem;
+  }
+
+  .morph-test {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: var(--space-xs);
+    border-top: 1px dashed var(--border-primary);
+  }
+
+  .morph-test-toggle {
+    align-self: flex-start;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 0;
+    font-family: var(--font-gaming);
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    transition: color var(--transition-normal);
+  }
+
+  .morph-test-toggle:hover { color: var(--accent-primary); }
+
+  .morph-test-input {
+    resize: vertical;
+    min-height: 48px;
+  }
+
+  .morph-test-status {
+    display: flex;
+    gap: var(--space-xs);
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+
+  .morph-test-status.err {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--accent-secondary);
+  }
+
+  .badge {
+    font-family: var(--font-gaming);
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px var(--space-xs);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-primary);
+  }
+
+  .badge-ok {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+  }
+
+  .badge-muted { color: var(--text-muted); }
+
+  .exec-check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-top: var(--space-xs);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .morph-test-output {
+    margin: 0;
+    padding: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-sm);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 160px;
+    overflow-y: auto;
   }
 </style>

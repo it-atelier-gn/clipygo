@@ -83,10 +83,20 @@ pub struct AppSettings {
     pub morph_shortcut: String,
     #[serde(default)]
     pub morph_rules: Vec<crate::morph::MorphRule>,
+    #[serde(default = "default_true")]
+    pub exec_enabled: bool,
+    #[serde(default = "default_exec_shortcut")]
+    pub exec_shortcut: String,
+    #[serde(default)]
+    pub exec_commands: Vec<crate::exec::ExecCommand>,
 }
 
 fn default_morph_shortcut() -> String {
     "Ctrl+Shift+M".to_string()
+}
+
+fn default_exec_shortcut() -> String {
+    "Ctrl+Shift+E".to_string()
 }
 
 fn default_true() -> bool {
@@ -127,6 +137,9 @@ impl Default for AppSettings {
             morph_enabled: true,
             morph_shortcut: default_morph_shortcut(),
             morph_rules: default_morph_rules(),
+            exec_enabled: true,
+            exec_shortcut: default_exec_shortcut(),
+            exec_commands: Vec::new(),
         }
     }
 }

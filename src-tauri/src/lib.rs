@@ -1,3 +1,4 @@
+mod exec;
 mod history;
 mod history_commands;
 mod morph;
@@ -147,7 +148,10 @@ pub fn run() {
             history_suppress_next_text,
             history_suppress_next_image_b64,
             get_pending_morph_events,
-            morph::morph_preview
+            morph::morph_preview,
+            morph::morph_test_rule,
+            exec::exec_run,
+            exec::exec_match_commands
         ])
         .setup(|app| {
             trayicon::setup(app);
@@ -345,6 +349,7 @@ pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
     let main_sc = parse_shortcut(app, &settings.global_shortcut);
     let history_sc = parse_shortcut(app, &settings.history_shortcut);
     let morph_sc = parse_shortcut(app, &settings.morph_shortcut);
+    let exec_sc = parse_shortcut(app, &settings.exec_shortcut);
 
     app.global_shortcut().unregister_all().ok();
 
@@ -393,6 +398,22 @@ pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
                 "app",
                 "error",
                 format!("Failed to register morph shortcut: {e}"),
+            );
+        }
+    }
+    if let Some(sc) = exec_sc {
+        debug_log(
+            app,
+            "app",
+            "info",
+            format!("Registering exec shortcut: {sc:?}"),
+        );
+        if let Err(e) = app.global_shortcut().on_shortcut(sc, on_exec_shortcut) {
+            debug_log(
+                app,
+                "app",
+                "error",
+                format!("Failed to register exec shortcut: {e}"),
             );
         }
     }
@@ -456,6 +477,89 @@ pub fn on_morph_shortcut(
         format!("Morph shortcut pressed: {shortcut:?}"),
     );
     open_morph_picker_window(app);
+}
+
+pub fn on_exec_shortcut(
+    app: &AppHandle,
+    shortcut: &tauri_plugin_global_shortcut::Shortcut,
+    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+) {
+    debug_log(
+        app,
+        "app",
+        "info",
+        format!("Exec shortcut pressed: {shortcut:?}"),
+    );
+    handle_exec_shortcut(app);
+}
+
+/// Resolves the exec shortcut: if the feature is enabled and exactly one enabled
+/// command matches the current clipboard, it runs directly; otherwise the picker
+/// window is shown so the user can choose.
+fn handle_exec_shortcut(app: &AppHandle) {
+    let settings = match SettingsCoordinator::from_handle(app) {
+        Ok(s) => s.get_settings().clone(),
+        Err(_) => {
+            open_exec_picker_window(app);
+            return;
+        }
+    };
+
+    let clipboard = app
+        .state::<tauri_plugin_clipboard::Clipboard>()
+        .read_text()
+        .unwrap_or_default();
+
+    if settings.exec_enabled {
+        let matches: Vec<&exec::ExecCommand> = settings
+            .exec_commands
+            .iter()
+            .filter(|c| c.enabled && exec::command_matches(c, &clipboard))
+            .collect();
+        if matches.len() == 1 {
+            let cmd = matches[0];
+            match exec::run_command(cmd, &clipboard) {
+                Ok(_) => debug_log(app, "exec", "info", format!("Ran command '{}'", cmd.name)),
+                Err(e) => debug_log(app, "exec", "error", e),
+            }
+            return;
+        }
+    }
+
+    open_exec_picker_window(app);
+}
+
+pub fn open_exec_picker_window(app: &AppHandle) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if let Some(window) = app.get_webview_window("exec-picker") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    match WebviewWindowBuilder::new(app, "exec-picker", WebviewUrl::App("exec-picker".into()))
+        .title("Execute - clipygo")
+        .devtools(true)
+        .inner_size(560.0, 480.0)
+        .decorations(false)
+        .center()
+        .build()
+    {
+        Ok(window) => {
+            let clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = clone.hide();
+                }
+            });
+        }
+        Err(e) => debug_log(
+            app,
+            "app",
+            "error",
+            format!("Failed to create exec picker window: {e}"),
+        ),
+    }
 }
 
 pub fn open_morph_picker_window(app: &AppHandle) {
