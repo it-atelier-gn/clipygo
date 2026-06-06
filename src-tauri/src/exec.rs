@@ -144,7 +144,10 @@ mod tests {
 
     #[test]
     fn pattern_matches_clipboard() {
-        assert!(command_matches(&cmd(r"^https?://", "x", ""), "https://a.com"));
+        assert!(command_matches(
+            &cmd(r"^https?://", "x", ""),
+            "https://a.com"
+        ));
         assert!(!command_matches(&cmd(r"^https?://", "x", ""), "no url"));
     }
 
@@ -176,10 +179,7 @@ mod tests {
 
     #[test]
     fn parse_args_keeps_substituted_value_as_single_arg() {
-        assert_eq!(
-            parse_args("{clipboard}", "a b c"),
-            vec!["a b c"]
-        );
+        assert_eq!(parse_args("{clipboard}", "a b c"), vec!["a b c"]);
     }
 
     #[test]
