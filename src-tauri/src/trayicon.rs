@@ -18,7 +18,7 @@ pub fn setup(app: &mut tauri::App) {
 
     // Create menu items
     let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>).unwrap();
-    let history_i = MenuItem::with_id(app, "history", "History…", true, None::<&str>).unwrap();
+    let history_i = MenuItem::with_id(app, "history", "History", true, None::<&str>).unwrap();
     let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>).unwrap();
     let debug_i = MenuItem::with_id(app, "debug", "Debug Log", true, None::<&str>).unwrap();
     let about_i = MenuItem::with_id(app, "about", "About", true, None::<&str>).unwrap();
