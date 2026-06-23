@@ -11,8 +11,25 @@ use crate::history::{Filter, HistoryCoordinator, HistoryEntryView, Stats};
 pub struct ResendPayload {
     pub kind: String,
     pub text: Option<String>,
+    pub html: Option<String>,
+    pub rtf: Option<String>,
+    pub files: Option<Vec<String>>,
     pub image_base64: Option<String>,
     pub mime: Option<String>,
+}
+
+impl Default for ResendPayload {
+    fn default() -> Self {
+        Self {
+            kind: String::new(),
+            text: None,
+            html: None,
+            rtf: None,
+            files: None,
+            image_base64: None,
+            mime: None,
+        }
+    }
 }
 
 #[tauri::command]
@@ -48,34 +65,55 @@ pub fn history_resend(
     id: Uuid,
 ) -> Result<ResendPayload, String> {
     let guard = coord.lock().map_err(|_| "history lock poisoned")?;
-    if let Some(text) = guard.get_text(id)? {
-        return Ok(ResendPayload {
-            kind: "text".into(),
-            text: Some(text),
-            image_base64: None,
-            mime: None,
-        });
-    }
-    let list = guard.list(
-        &Filter {
-            query: String::new(),
-            kind: crate::history::FilterKind::Image,
-            pinned_only: false,
-        },
-        0,
-        u32::MAX,
-    )?;
-    let entry = list
-        .iter()
-        .find(|e| e.id == id)
+    let entry = guard
+        .get_entry(id)?
         .ok_or_else(|| "entry not found".to_string())?;
-    let bytes = guard.get_image(id)?;
-    Ok(ResendPayload {
-        kind: "image".into(),
-        text: None,
-        image_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
-        mime: entry.mime.clone(),
-    })
+    match entry.kind.as_str() {
+        "image" => {
+            let bytes = guard.get_image(id)?;
+            Ok(ResendPayload {
+                kind: "image".into(),
+                image_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
+                mime: entry.mime,
+                ..Default::default()
+            })
+        }
+        "html" => {
+            let html = entry.text.unwrap_or_default();
+            Ok(ResendPayload {
+                kind: "html".into(),
+                text: Some(crate::history::html_to_text(&html)),
+                html: Some(html),
+                mime: entry.mime,
+                ..Default::default()
+            })
+        }
+        "rtf" => Ok(ResendPayload {
+            kind: "rtf".into(),
+            rtf: entry.text,
+            mime: entry.mime,
+            ..Default::default()
+        }),
+        "files" => {
+            let files = entry
+                .text
+                .unwrap_or_default()
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect();
+            Ok(ResendPayload {
+                kind: "files".into(),
+                files: Some(files),
+                ..Default::default()
+            })
+        }
+        _ => Ok(ResendPayload {
+            kind: "text".into(),
+            text: entry.text,
+            ..Default::default()
+        }),
+    }
 }
 
 #[tauri::command]

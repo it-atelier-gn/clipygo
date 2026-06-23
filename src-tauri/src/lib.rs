@@ -83,6 +83,14 @@ pub fn hash_image(bytes: &[u8]) -> u64 {
     h.finish()
 }
 
+pub fn hash_kind(kind: &str, bytes: &[u8]) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    (kind, bytes).hash(&mut h);
+    h.finish()
+}
+
 #[tauri::command]
 fn history_suppress_next_text(state: tauri::State<'_, LastClipHash>, text: String) {
     if let Ok(mut g) = state.0.lock() {
@@ -103,6 +111,27 @@ fn history_suppress_next_image_b64(
         *g = Some(hash_image(&bytes));
     }
     Ok(())
+}
+
+#[tauri::command]
+fn history_suppress_next_html(state: tauri::State<'_, LastClipHash>, html: String) {
+    if let Ok(mut g) = state.0.lock() {
+        *g = Some(hash_kind("html", html.as_bytes()));
+    }
+}
+
+#[tauri::command]
+fn history_suppress_next_rtf(state: tauri::State<'_, LastClipHash>, rtf: String) {
+    if let Ok(mut g) = state.0.lock() {
+        *g = Some(hash_kind("rtf", rtf.as_bytes()));
+    }
+}
+
+#[tauri::command]
+fn history_suppress_next_files(state: tauri::State<'_, LastClipHash>, files: Vec<String>) {
+    if let Ok(mut g) = state.0.lock() {
+        *g = Some(hash_kind("files", files.join("\n").as_bytes()));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -147,6 +176,9 @@ pub fn run() {
             get_debug_sources,
             history_suppress_next_text,
             history_suppress_next_image_b64,
+            history_suppress_next_html,
+            history_suppress_next_rtf,
+            history_suppress_next_files,
             get_pending_morph_events,
             morph::morph_preview,
             morph::morph_test_rule,
@@ -942,28 +974,40 @@ fn start_history_capture(
             }
             let clipboard = app_handle.state::<tauri_plugin_clipboard::Clipboard>();
             let last_hash_state = app_handle.state::<LastClipHash>();
-            if matches!(clipboard.has_text(), Ok(true)) {
-                if let Ok(text) = clipboard.read_text() {
-                    if text.is_empty() {
-                        return;
+
+            let is_new = |h: u64| -> bool {
+                if let Ok(mut guard) = last_hash_state.0.lock() {
+                    if *guard == Some(h) {
+                        return false;
                     }
-                    let h = hash_text(&text);
-                    if let Ok(mut guard) = last_hash_state.0.lock() {
-                        if *guard == Some(h) {
+                    *guard = Some(h);
+                    return true;
+                }
+                false
+            };
+            let match_pattern = |s: &str| -> Option<String> {
+                shared_patterns.lock().ok().and_then(|p| {
+                    p.iter()
+                        .find(|r| r.is_match(s))
+                        .map(|r| r.as_str().to_string())
+                })
+            };
+
+            if matches!(clipboard.has_files(), Ok(true)) {
+                if let Ok(files) = clipboard.read_files() {
+                    let files: Vec<String> = files.into_iter().filter(|f| !f.is_empty()).collect();
+                    if !files.is_empty() {
+                        let joined = files.join("\n");
+                        if !is_new(hash_kind("files", joined.as_bytes())) {
                             return;
                         }
-                        *guard = Some(h);
+                        let matched = match_pattern(&joined);
+                        if let Ok(mut hist) = history_coord.lock() {
+                            let _ = hist.insert_files(files, matched);
+                        }
+                        history::notify_changed(&app_handle);
+                        return;
                     }
-                    let matched = shared_patterns.lock().ok().and_then(|p| {
-                        p.iter()
-                            .find(|r| r.is_match(&text))
-                            .map(|r| r.as_str().to_string())
-                    });
-                    if let Ok(mut hist) = history_coord.lock() {
-                        let _ = hist.insert_text(text, matched);
-                    }
-                    history::notify_changed(&app_handle);
-                    return;
                 }
             }
             if matches!(clipboard.has_image(), Ok(true)) {
@@ -971,16 +1015,58 @@ fn start_history_capture(
                     if bytes.is_empty() {
                         return;
                     }
-                    let h = hash_image(&bytes);
-                    if let Ok(mut guard) = last_hash_state.0.lock() {
-                        if *guard == Some(h) {
-                            return;
-                        }
-                        *guard = Some(h);
+                    if !is_new(hash_image(&bytes)) {
+                        return;
                     }
                     let (w, ht) = parse_png_dimensions(&bytes).unwrap_or((0, 0));
                     if let Ok(mut hist) = history_coord.lock() {
                         let _ = hist.insert_image("image/png".into(), w, ht, bytes, None);
+                    }
+                    history::notify_changed(&app_handle);
+                    return;
+                }
+            }
+            if matches!(clipboard.has_html(), Ok(true)) {
+                if let Ok(html) = clipboard.read_html() {
+                    if !html.trim().is_empty() {
+                        if !is_new(hash_kind("html", html.as_bytes())) {
+                            return;
+                        }
+                        let matched = match_pattern(&html);
+                        if let Ok(mut hist) = history_coord.lock() {
+                            let _ = hist.insert_html(html, matched);
+                        }
+                        history::notify_changed(&app_handle);
+                        return;
+                    }
+                }
+            }
+            if matches!(clipboard.has_rtf(), Ok(true)) {
+                if let Ok(rtf) = clipboard.read_rtf() {
+                    if !rtf.trim().is_empty() {
+                        if !is_new(hash_kind("rtf", rtf.as_bytes())) {
+                            return;
+                        }
+                        let matched = match_pattern(&rtf);
+                        if let Ok(mut hist) = history_coord.lock() {
+                            let _ = hist.insert_rtf(rtf, matched);
+                        }
+                        history::notify_changed(&app_handle);
+                        return;
+                    }
+                }
+            }
+            if matches!(clipboard.has_text(), Ok(true)) {
+                if let Ok(text) = clipboard.read_text() {
+                    if text.is_empty() {
+                        return;
+                    }
+                    if !is_new(hash_text(&text)) {
+                        return;
+                    }
+                    let matched = match_pattern(&text);
+                    if let Ok(mut hist) = history_coord.lock() {
+                        let _ = hist.insert_text(text, matched);
                     }
                     history::notify_changed(&app_handle);
                 }

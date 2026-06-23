@@ -12,6 +12,7 @@ use uuid::Uuid;
 const KEYRING_SERVICE: &str = "clipygo";
 const KEYRING_USER: &str = "history-content-key";
 const MAX_TEXT_LEN_FOR_PREVIEW: usize = 200;
+const PREVIEW_MAX_LINES: usize = 3;
 const NONCE_LEN: usize = 24;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +21,7 @@ pub struct HistoryEntryView {
     pub timestamp: i64,
     pub kind_tag: String,
     pub preview: String,
+    pub line_count: u32,
     pub mime: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -27,6 +29,13 @@ pub struct HistoryEntryView {
     pub matched_pattern: Option<String>,
     pub pinned: bool,
     pub last_sent_to: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntryContent {
+    pub kind: String,
+    pub text: Option<String>,
+    pub mime: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +53,9 @@ pub enum FilterKind {
     All,
     Text,
     Image,
+    Html,
+    Rtf,
+    Files,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -138,6 +150,62 @@ impl HistoryCoordinator {
         Ok(id)
     }
 
+    fn insert_string_kind(
+        &mut self,
+        kind: &str,
+        mime: Option<&str>,
+        content: &str,
+        matched_pattern: Option<String>,
+    ) -> Result<Uuid, String> {
+        let id = Uuid::new_v4();
+        let ts = now_ms();
+        let plain_bytes = content.as_bytes();
+        let size = plain_bytes.len() as u64;
+        let ciphertext = encrypt(&self.key, plain_bytes)?;
+        self.conn
+            .execute(
+                "INSERT INTO entries (id, timestamp, kind, content_ct, mime, size_bytes, matched_pattern, pinned) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+                params![
+                    id.as_bytes().to_vec(),
+                    ts,
+                    kind,
+                    ciphertext,
+                    mime,
+                    size as i64,
+                    matched_pattern
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        self.evict_until_under_cap()?;
+        Ok(id)
+    }
+
+    pub fn insert_html(
+        &mut self,
+        html: String,
+        matched_pattern: Option<String>,
+    ) -> Result<Uuid, String> {
+        self.insert_string_kind("html", Some("text/html"), &html, matched_pattern)
+    }
+
+    pub fn insert_rtf(
+        &mut self,
+        rtf: String,
+        matched_pattern: Option<String>,
+    ) -> Result<Uuid, String> {
+        self.insert_string_kind("rtf", Some("text/rtf"), &rtf, matched_pattern)
+    }
+
+    pub fn insert_files(
+        &mut self,
+        files: Vec<String>,
+        matched_pattern: Option<String>,
+    ) -> Result<Uuid, String> {
+        let joined = files.join("\n");
+        self.insert_string_kind("files", None, &joined, matched_pattern)
+    }
+
     pub fn insert_image(
         &mut self,
         mime: String,
@@ -180,6 +248,9 @@ impl HistoryCoordinator {
         match filter.kind {
             FilterKind::Text => sql.push_str(" AND kind = 'text'"),
             FilterKind::Image => sql.push_str(" AND kind = 'image'"),
+            FilterKind::Html => sql.push_str(" AND kind = 'html'"),
+            FilterKind::Rtf => sql.push_str(" AND kind = 'rtf'"),
+            FilterKind::Files => sql.push_str(" AND kind = 'files'"),
             FilterKind::All => {}
         }
         if filter.pinned_only {
@@ -236,12 +307,27 @@ impl HistoryCoordinator {
             ) = row.map_err(|e| e.to_string())?;
 
             let mut preview = String::new();
-            if kind == "text" {
+            let mut line_count: u32 = 0;
+            let is_text_like = matches!(kind.as_str(), "text" | "html" | "rtf" | "files");
+            if is_text_like {
                 if let Some(ct) = &content_ct {
                     if let Ok(plain) = decrypt(&self.key, ct) {
                         if let Ok(s) = String::from_utf8(plain) {
-                            preview = truncate_preview(&s);
-                            if !query.is_empty() && !s.to_lowercase().contains(&query) {
+                            let searchable = match kind.as_str() {
+                                "html" => strip_html(&s),
+                                "rtf" => strip_rtf(&s),
+                                _ => s.clone(),
+                            };
+                            if kind == "files" {
+                                let (p, n) = files_preview(&s);
+                                preview = p;
+                                line_count = n;
+                            } else {
+                                let (p, n) = build_preview(&searchable);
+                                preview = p;
+                                line_count = n;
+                            }
+                            if !query.is_empty() && !searchable.to_lowercase().contains(&query) {
                                 continue;
                             }
                         }
@@ -266,6 +352,7 @@ impl HistoryCoordinator {
                 timestamp,
                 kind_tag: kind,
                 preview,
+                line_count,
                 mime,
                 width: width.map(|v| v as u32),
                 height: height.map(|v| v as u32),
@@ -293,26 +380,34 @@ impl HistoryCoordinator {
         decrypt(&self.key, &ct)
     }
 
-    pub fn get_text(&self, id: Uuid) -> Result<Option<String>, String> {
-        let ct: Option<Vec<u8>> = self
+    pub fn get_entry(&self, id: Uuid) -> Result<Option<EntryContent>, String> {
+        let row = self
             .conn
             .query_row(
-                "SELECT content_ct FROM entries WHERE id = ? AND kind = 'text'",
+                "SELECT kind, content_ct, mime FROM entries WHERE id = ?",
                 params![id.as_bytes().to_vec()],
-                |r| r.get(0),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, Option<Vec<u8>>>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                    ))
+                },
             )
             .optional()
-            .map_err(|e| e.to_string())?
-            .flatten();
-        match ct {
-            None => Ok(None),
+            .map_err(|e| e.to_string())?;
+        let (kind, ct, mime) = match row {
+            None => return Ok(None),
+            Some(v) => v,
+        };
+        let text = match ct {
             Some(c) => {
                 let plain = decrypt(&self.key, &c)?;
-                String::from_utf8(plain)
-                    .map(Some)
-                    .map_err(|e| e.to_string())
+                Some(String::from_utf8(plain).map_err(|e| e.to_string())?)
             }
-        }
+            None => None,
+        };
+        Ok(Some(EntryContent { kind, text, mime }))
     }
 
     pub fn set_pinned(&self, id: Uuid, pinned: bool) -> Result<(), String> {
@@ -445,17 +540,155 @@ fn random_key() -> [u8; 32] {
     k
 }
 
-fn truncate_preview(s: &str) -> String {
-    let one_line: String = s.lines().next().unwrap_or("").to_string();
-    if one_line.chars().count() <= MAX_TEXT_LEN_FOR_PREVIEW {
-        one_line
-    } else {
-        one_line
+fn build_preview(s: &str) -> (String, u32) {
+    let line_count = s.lines().count().max(1) as u32;
+    let mut snippet: String = s
+        .lines()
+        .take(PREVIEW_MAX_LINES)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut truncated = false;
+    if snippet.chars().count() > MAX_TEXT_LEN_FOR_PREVIEW {
+        snippet = snippet.chars().take(MAX_TEXT_LEN_FOR_PREVIEW).collect();
+        truncated = true;
+    }
+    if truncated || (line_count as usize) > PREVIEW_MAX_LINES {
+        snippet.push('…');
+    }
+    (snippet, line_count)
+}
+
+fn files_preview(joined: &str) -> (String, u32) {
+    let files: Vec<&str> = joined.lines().filter(|l| !l.is_empty()).collect();
+    let count = files.len() as u32;
+    let mut preview = files
+        .iter()
+        .map(|f| file_name_of(f))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if preview.chars().count() > MAX_TEXT_LEN_FOR_PREVIEW {
+        preview = preview
             .chars()
             .take(MAX_TEXT_LEN_FOR_PREVIEW)
             .collect::<String>()
-            + "…"
+            + "…";
     }
+    (preview, count)
+}
+
+fn file_name_of(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    trimmed
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(trimmed)
+        .to_string()
+}
+
+pub fn html_to_text(s: &str) -> String {
+    strip_html(s)
+}
+
+fn strip_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for c in s.chars() {
+        match c {
+            '<' => {
+                in_tag = true;
+                out.push(' ');
+            }
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    let decoded = out
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn strip_rtf(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
+    let mut out = String::new();
+    let mut i = 0usize;
+    let mut depth = 0usize;
+    let mut skip_depth: Option<usize> = None;
+    while i < n {
+        match chars[i] {
+            '{' => {
+                depth += 1;
+                i += 1;
+            }
+            '}' => {
+                if let Some(sd) = skip_depth {
+                    if depth == sd {
+                        skip_depth = None;
+                    }
+                }
+                depth = depth.saturating_sub(1);
+                i += 1;
+            }
+            '\\' => {
+                i += 1;
+                if i >= n {
+                    break;
+                }
+                let nc = chars[i];
+                if nc == '*' {
+                    if skip_depth.is_none() {
+                        skip_depth = Some(depth);
+                    }
+                    i += 1;
+                } else if nc.is_ascii_alphabetic() {
+                    let start = i;
+                    while i < n && chars[i].is_ascii_alphabetic() {
+                        i += 1;
+                    }
+                    let word: String = chars[start..i].iter().collect();
+                    if i < n && (chars[i] == '-' || chars[i].is_ascii_digit()) {
+                        i += 1;
+                        while i < n && chars[i].is_ascii_digit() {
+                            i += 1;
+                        }
+                    }
+                    if i < n && chars[i] == ' ' {
+                        i += 1;
+                    }
+                    if skip_depth.is_none() {
+                        match word.as_str() {
+                            "par" | "line" | "tab" | "cell" | "row" => out.push(' '),
+                            "fonttbl" | "colortbl" | "stylesheet" | "info" | "pict" | "object"
+                            | "header" | "footer" => skip_depth = Some(depth),
+                            _ => {}
+                        }
+                    }
+                } else if nc == '\'' {
+                    i += 1;
+                    let mut k = 0;
+                    while k < 2 && i < n && chars[i].is_ascii_hexdigit() {
+                        i += 1;
+                        k += 1;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+            c => {
+                if skip_depth.is_none() {
+                    out.push(c);
+                }
+                i += 1;
+            }
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn now_ms() -> i64 {
@@ -564,10 +797,12 @@ mod tests {
     }
 
     #[test]
-    fn get_text_roundtrip() {
+    fn get_entry_roundtrip() {
         let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
         let id = h.insert_text("payload".to_string(), None).unwrap();
-        assert_eq!(h.get_text(id).unwrap().as_deref(), Some("payload"));
+        let entry = h.get_entry(id).unwrap().unwrap();
+        assert_eq!(entry.kind, "text");
+        assert_eq!(entry.text.as_deref(), Some("payload"));
     }
 
     #[test]
@@ -647,6 +882,111 @@ mod tests {
             .unwrap();
         assert_eq!(search.len(), 1);
         assert_eq!(search[0].preview, "hello world");
+    }
+
+    #[test]
+    fn build_preview_multiline_reports_line_count() {
+        let (preview, lines) = build_preview("line one\nline two\nline three\nline four");
+        assert_eq!(lines, 4);
+        assert!(preview.starts_with("line one\nline two\nline three"));
+        assert!(preview.ends_with('…'));
+        let (single, n) = build_preview("just one");
+        assert_eq!(n, 1);
+        assert_eq!(single, "just one");
+    }
+
+    #[test]
+    fn strip_html_yields_plain_text() {
+        let html = "<p>Hello <b>world</b> &amp; <i>friends</i></p>";
+        assert_eq!(strip_html(html), "Hello world & friends");
+    }
+
+    #[test]
+    fn strip_rtf_skips_control_tables() {
+        let rtf = r"{\rtf1\ansi{\fonttbl{\f0 Arial;}}\f0 Hello \b world\b0 .}";
+        assert_eq!(strip_rtf(rtf), "Hello world.");
+    }
+
+    #[test]
+    fn insert_html_lists_with_stripped_preview() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        let id = h
+            .insert_html("<h1>Title</h1><p>Body text</p>".into(), None)
+            .unwrap();
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].kind_tag, "html");
+        assert_eq!(list[0].preview, "Title Body text");
+        let entry = h.get_entry(id).unwrap().unwrap();
+        assert_eq!(entry.kind, "html");
+        assert_eq!(
+            entry.text.as_deref(),
+            Some("<h1>Title</h1><p>Body text</p>")
+        );
+    }
+
+    #[test]
+    fn insert_files_previews_basenames_and_counts() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        h.insert_files(
+            vec![
+                "C:\\Users\\me\\report.pdf".into(),
+                "/home/me/photo.png".into(),
+            ],
+            None,
+        )
+        .unwrap();
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list[0].kind_tag, "files");
+        assert_eq!(list[0].line_count, 2);
+        assert_eq!(list[0].preview, "report.pdf, photo.png");
+    }
+
+    #[test]
+    fn filter_and_search_cover_rich_kinds() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        h.insert_html("<p>needle in html</p>".into(), None).unwrap();
+        h.insert_rtf(r"{\rtf1 plain rtf text}".into(), None)
+            .unwrap();
+        h.insert_files(vec!["/tmp/doc.txt".into()], None).unwrap();
+
+        let only_html = h
+            .list(
+                &Filter {
+                    kind: FilterKind::Html,
+                    ..Default::default()
+                },
+                0,
+                10,
+            )
+            .unwrap();
+        assert_eq!(only_html.len(), 1);
+
+        let search = h
+            .list(
+                &Filter {
+                    query: "needle".into(),
+                    ..Default::default()
+                },
+                0,
+                10,
+            )
+            .unwrap();
+        assert_eq!(search.len(), 1);
+        assert_eq!(search[0].kind_tag, "html");
+
+        let file_search = h
+            .list(
+                &Filter {
+                    query: "doc.txt".into(),
+                    ..Default::default()
+                },
+                0,
+                10,
+            )
+            .unwrap();
+        assert_eq!(file_search.len(), 1);
+        assert_eq!(file_search[0].kind_tag, "files");
     }
 
     #[test]
