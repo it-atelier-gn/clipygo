@@ -9,7 +9,7 @@ Clipboard monitor that watches for specific content patterns and lets you route 
 
 It sits in your system tray, monitors the clipboard for regex matches (meeting links, Code With Me sessions, etc.), and pops up a compact window where you pick a target and hit Enter. Plugins handle the actual delivery.
 
-An optional clipboard history functionality is also included.
+An optional clipboard history functionality is also included. It captures plain text, rich text (HTML and RTF), images (PNG), and copied files, and lets you filter by type, search, pin, and re-copy or re-send any entry. Multi-line entries show a multi-line preview with a line count so they are easy to tell apart at a glance.
 
 **Morph** transforms clipboard text in place: rule-based automatic rewrites (regex match → built-in transform or regex replace) plus an on-demand, keyboard-driven picker (default `Ctrl+Shift+M`) for one-off transformations. Built-ins cover URL tracking strip, JSON/XML formatting, Base64/URL encoding, case conversion, slugify, accent/quote normalization, and line operations. Rules can be authored and tested live in Settings.
 
