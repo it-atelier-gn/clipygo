@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::history::{Filter, HistoryCoordinator, HistoryEntryView, Stats};
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 pub struct ResendPayload {
     pub kind: String,
     pub text: Option<String>,
@@ -16,20 +16,6 @@ pub struct ResendPayload {
     pub files: Option<Vec<String>>,
     pub image_base64: Option<String>,
     pub mime: Option<String>,
-}
-
-impl Default for ResendPayload {
-    fn default() -> Self {
-        Self {
-            kind: String::new(),
-            text: None,
-            html: None,
-            rtf: None,
-            files: None,
-            image_base64: None,
-            mime: None,
-        }
-    }
 }
 
 #[tauri::command]
