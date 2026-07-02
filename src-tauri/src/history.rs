@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chacha20poly1305::aead::{Aead, KeyInit};
-use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -510,11 +510,11 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
 
 fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, String> {
     use rand::Rng;
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
+    let cipher = XChaCha20Poly1305::new(key.into());
     let mut nonce = [0u8; NONCE_LEN];
     rand::rng().fill_bytes(&mut nonce);
     let ct = cipher
-        .encrypt(XNonce::from_slice(&nonce), plaintext)
+        .encrypt((&nonce).into(), plaintext)
         .map_err(|e| format!("encrypt: {e}"))?;
     let mut out = Vec::with_capacity(NONCE_LEN + ct.len());
     out.extend_from_slice(&nonce);
@@ -527,9 +527,10 @@ fn decrypt(key: &[u8; 32], blob: &[u8]) -> Result<Vec<u8>, String> {
         return Err("ciphertext too short".into());
     }
     let (nonce, ct) = blob.split_at(NONCE_LEN);
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(key));
+    let cipher = XChaCha20Poly1305::new(key.into());
+    let nonce: &XNonce = nonce.try_into().expect("nonce length checked above");
     cipher
-        .decrypt(XNonce::from_slice(nonce), ct)
+        .decrypt(nonce, ct)
         .map_err(|e| format!("decrypt: {e}"))
 }
 
