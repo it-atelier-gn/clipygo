@@ -5,7 +5,15 @@
   import { invoke } from '@tauri-apps/api/core';
   import { browser } from '$app/environment';
   import type { UnlistenFn } from "@tauri-apps/api/event";
-  import { hasText, readText, hasImage, readImageBase64 } from "tauri-plugin-clipboard-api";
+  import {
+    hasText,
+    readText,
+    hasImage,
+    readImageBase64,
+    hasHTML,
+    hasFiles,
+    readFiles,
+  } from "tauri-plugin-clipboard-api";
 
   interface Target {
     id: string;
@@ -35,6 +43,8 @@
   let unlistenClipboard: UnlistenFn;
   let clipboardContent = "";
   let clipboardImage = ""; // base64 PNG when clipboard has an image
+  let clipboardFiles: string[] = [];
+  let clipboardIsRich = false;
   let targets: Target[] = [];
   let pluginErrors: PluginError[] = [];
   let loadingTargets = false;
@@ -43,7 +53,7 @@
   let messageType: 'success' | 'error' | '' = '';
   let selectedTargetIndex = 0;
 
-  $: clipboardFormat = clipboardContent ? 'text' : clipboardImage ? 'image' : null;
+  $: clipboardFormat = clipboardFiles.length ? 'files' : clipboardContent ? 'text' : clipboardImage ? 'image' : null;
   $: compatibleCount = targets.filter(t => clipboardFormat !== null && t.formats.includes(clipboardFormat)).length;
 
   function isCompatible(target: Target): boolean {
@@ -94,19 +104,34 @@
 
   async function readClipboard() {
     try {
-      if (await hasText()) {
+      if (await hasFiles()) {
+        clipboardFiles = await readFiles();
+        clipboardContent = "";
+        clipboardImage = "";
+        clipboardIsRich = false;
+      } else if (await hasText()) {
         clipboardContent = await readText();
         clipboardImage = "";
+        clipboardFiles = [];
+        clipboardIsRich = await hasHTML();
       } else if (await hasImage()) {
         clipboardImage = await readImageBase64();
         clipboardContent = "";
+        clipboardFiles = [];
+        clipboardIsRich = false;
       } else {
         clipboardContent = "";
         clipboardImage = "";
+        clipboardFiles = [];
+        clipboardIsRich = false;
       }
     } catch (e) {
       console.error('Failed to read clipboard:', e);
     }
+  }
+
+  function fileName(path: string): string {
+    return path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? path;
   }
 
   async function loadTargets() {
@@ -249,15 +274,26 @@
       <section class="card clipboard-section" data-tauri-drag-region>
         <header class="card-header">
           <h2 class="h4 clipboard-header">📄 Clipboard Content</h2>
-          {#if clipboardContent}
-            <span class="badge badge-primary" data-tauri-drag-region>{clipboardContent.length} chars</span>
+          {#if clipboardFiles.length}
+            <span class="badge badge-primary" data-tauri-drag-region>{clipboardFiles.length} {clipboardFiles.length === 1 ? 'file' : 'files'}</span>
+          {:else if clipboardContent}
+            <span class="badge badge-primary" data-tauri-drag-region>{clipboardIsRich ? 'rich text · ' : ''}{clipboardContent.length} chars</span>
           {:else if clipboardImage}
             <span class="badge badge-primary" data-tauri-drag-region>image</span>
           {/if}
         </header>
 
         <div class="card-body" data-tauri-drag-region>
-          {#if clipboardContent}
+          {#if clipboardFiles.length}
+            <div class="clipboard-files" data-tauri-drag-region>
+              {#each clipboardFiles as f}
+                <div class="file-row" title={f}>
+                  <span class="file-icon">📄</span>
+                  <span class="file-name">{fileName(f)}</span>
+                </div>
+              {/each}
+            </div>
+          {:else if clipboardContent}
             <div class="clipboard-content" data-tauri-drag-region>
               {clipboardContent}
             </div>
@@ -269,7 +305,7 @@
             <div class="empty-state compact" data-tauri-drag-region>
               <div class="empty-icon" data-tauri-drag-region>📄</div>
               <h3 class="h6" data-tauri-drag-region>No compatible content</h3>
-              <p class="text-secondary" data-tauri-drag-region>Copy text or an image</p>
+              <p class="text-secondary" data-tauri-drag-region>Copy text, an image, or files</p>
             </div>
           {/if}
         </div>
@@ -498,6 +534,40 @@
     overflow-y: auto;
     position: relative;
     box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .clipboard-files {
+    background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
+    border: 2px solid var(--border-accent);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm);
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+  }
+
+  .file-row:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .clipboard-image {
