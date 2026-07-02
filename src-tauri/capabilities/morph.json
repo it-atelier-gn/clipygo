@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "morph",
+  "description": "Capability for the Morph notification window",
+  "windows": ["morph"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-start-dragging",
+    "clipboard:allow-write-text"
+  ]
+}

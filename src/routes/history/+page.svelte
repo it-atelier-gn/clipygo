@@ -4,15 +4,22 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow';
-  import { writeText, writeImageBase64 } from 'tauri-plugin-clipboard-api';
+  import {
+    writeText,
+    writeImageBase64,
+    writeHtmlAndText,
+    writeRtf,
+    writeFiles,
+  } from 'tauri-plugin-clipboard-api';
 
-  type KindTag = 'text' | 'image';
+  type KindTag = 'text' | 'image' | 'html' | 'rtf' | 'files';
 
   interface HistoryEntryView {
     id: string;
     timestamp: number;
     kind_tag: KindTag;
     preview: string;
+    line_count: number;
     mime?: string;
     width?: number;
     height?: number;
@@ -33,7 +40,8 @@
 
   let entries: HistoryEntryView[] = [];
   let stats: Stats | null = null;
-  let filterKind: 'all' | 'text' | 'image' = 'all';
+  type FilterKind = 'all' | 'text' | 'html' | 'rtf' | 'image' | 'files';
+  let filterKind: FilterKind = 'all';
   let pinnedOnly = false;
   let query = '';
   let thumbnails: Record<string, string> = {};
@@ -91,10 +99,29 @@
     }
   }
 
-  async function writePayloadToClipboard(payload: { kind: string; text?: string; image_base64?: string }) {
+  interface ResendPayload {
+    kind: string;
+    text?: string;
+    html?: string;
+    rtf?: string;
+    files?: string[];
+    image_base64?: string;
+    mime?: string;
+  }
+
+  async function writePayloadToClipboard(payload: ResendPayload) {
     if (payload.kind === 'text' && payload.text != null) {
       await invoke('history_suppress_next_text', { text: payload.text });
       await writeText(payload.text);
+    } else if (payload.kind === 'html' && payload.html != null) {
+      await invoke('history_suppress_next_html', { html: payload.html });
+      await writeHtmlAndText(payload.html, payload.text ?? '');
+    } else if (payload.kind === 'rtf' && payload.rtf != null) {
+      await invoke('history_suppress_next_rtf', { rtf: payload.rtf });
+      await writeRtf(payload.rtf);
+    } else if (payload.kind === 'files' && payload.files?.length) {
+      await invoke('history_suppress_next_files', { files: payload.files });
+      await writeFiles(payload.files);
     } else if (payload.kind === 'image' && payload.image_base64) {
       await invoke('history_suppress_next_image_b64', { imageBase64: payload.image_base64 });
       await writeImageBase64(payload.image_base64);
@@ -103,10 +130,7 @@
 
   async function copyToClipboard(e: HistoryEntryView) {
     try {
-      const payload = await invoke<{ kind: string; text?: string; image_base64?: string }>(
-        'history_resend',
-        { id: e.id },
-      );
+      const payload = await invoke<ResendPayload>('history_resend', { id: e.id });
       await writePayloadToClipboard(payload);
     } catch (err) {
       errorMsg = `Copy failed: ${err}`;
@@ -116,10 +140,7 @@
   async function resend(e: HistoryEntryView) {
     resendingId = e.id;
     try {
-      const payload = await invoke<{ kind: string; text?: string; image_base64?: string }>(
-        'history_resend',
-        { id: e.id },
-      );
+      const payload = await invoke<ResendPayload>('history_resend', { id: e.id });
       await writePayloadToClipboard(payload);
       const main = await WebviewWindow.getByLabel('main');
       if (main) {
@@ -142,6 +163,15 @@
       stats = await invoke<Stats>('history_stats');
     } catch (err) {
       errorMsg = `Clear failed: ${err}`;
+    }
+  }
+
+  function kindLabel(kind: KindTag): string {
+    switch (kind) {
+      case 'html': return 'rich · html';
+      case 'rtf': return 'rich · rtf';
+      case 'files': return 'files';
+      default: return kind;
     }
   }
 
@@ -310,7 +340,10 @@
     <div class="filter-buttons">
       <button class="filter-btn" class:filter-active={filterKind === 'all'} on:click={() => { filterKind = 'all'; selectedIndex = 0; refresh(); }}>All</button>
       <button class="filter-btn" class:filter-active={filterKind === 'text'} on:click={() => { filterKind = 'text'; selectedIndex = 0; refresh(); }}>Text</button>
+      <button class="filter-btn" class:filter-active={filterKind === 'html'} on:click={() => { filterKind = 'html'; selectedIndex = 0; refresh(); }}>HTML</button>
+      <button class="filter-btn" class:filter-active={filterKind === 'rtf'} on:click={() => { filterKind = 'rtf'; selectedIndex = 0; refresh(); }}>RTF</button>
       <button class="filter-btn" class:filter-active={filterKind === 'image'} on:click={() => { filterKind = 'image'; selectedIndex = 0; refresh(); }}>Images</button>
+      <button class="filter-btn" class:filter-active={filterKind === 'files'} on:click={() => { filterKind = 'files'; selectedIndex = 0; refresh(); }}>Files</button>
       <button class="filter-btn" class:filter-active={pinnedOnly} on:click={() => { pinnedOnly = !pinnedOnly; selectedIndex = 0; refresh(); }}>📌 Pinned</button>
     </div>
   </div>
@@ -336,6 +369,12 @@
               <img src={thumbnails[e.id]} alt="" />
             {:else if e.kind_tag === 'image'}
               <div class="thumb-placeholder">🖼</div>
+            {:else if e.kind_tag === 'html'}
+              <div class="thumb-placeholder">🌐</div>
+            {:else if e.kind_tag === 'rtf'}
+              <div class="thumb-placeholder">📝</div>
+            {:else if e.kind_tag === 'files'}
+              <div class="thumb-placeholder">📁</div>
             {:else}
               <div class="thumb-placeholder">📋</div>
             {/if}
@@ -344,6 +383,14 @@
             <div class="row-meta">
               <span class="row-time">{formatTime(e.timestamp)}</span>
               <span class="row-size">{formatBytes(e.size_bytes)}</span>
+              {#if e.kind_tag !== 'text' && e.kind_tag !== 'image'}
+                <span class="chip chip-kind">{kindLabel(e.kind_tag)}</span>
+              {/if}
+              {#if e.kind_tag === 'files' && e.line_count > 0}
+                <span class="chip">{e.line_count} {e.line_count === 1 ? 'file' : 'files'}</span>
+              {:else if e.line_count > 1}
+                <span class="chip chip-lines">{e.line_count} lines</span>
+              {/if}
               {#if e.matched_pattern}
                 <span class="chip chip-pattern" title={e.matched_pattern}>matched</span>
               {/if}
@@ -354,11 +401,11 @@
                 <span class="chip">{e.width}×{e.height}</span>
               {/if}
             </div>
-            <div class="row-preview">
-              {#if e.kind_tag === 'text'}
-                {e.preview}
-              {:else}
+            <div class="row-preview" class:row-preview-multiline={e.line_count > 1}>
+              {#if e.kind_tag === 'image'}
                 {e.mime ?? 'image'}
+              {:else}
+                {e.preview}
               {/if}
             </div>
           </div>
@@ -585,6 +632,16 @@
     background: rgba(0, 212, 255, 0.08);
   }
 
+  .chip-kind {
+    color: var(--accent-warning, #fbbf24);
+    background: rgba(251, 191, 36, 0.08);
+  }
+
+  .chip-lines {
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+  }
+
   .chip-target {
     color: var(--accent-success, #4ade80);
     background: rgba(74, 222, 128, 0.08);
@@ -597,6 +654,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .row-preview-multiline {
+    white-space: pre-wrap;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
   }
 
   .row-actions {

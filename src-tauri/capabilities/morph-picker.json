@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "morph-picker",
+  "description": "Capability for the manual Morph picker window",
+  "windows": ["morph-picker"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-start-dragging",
+    "clipboard:allow-read-text",
+    "clipboard:allow-write-text"
+  ]
+}

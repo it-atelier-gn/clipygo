@@ -9,8 +9,11 @@ Clipboard monitor that watches for specific content patterns and lets you route 
 
 It sits in your system tray, monitors the clipboard for regex matches (meeting links, Code With Me sessions, etc.), and pops up a compact window where you pick a target and hit Enter. Plugins handle the actual delivery.
 
-An optional clipboard history functionality is also included. 
+**History** stores plain text, rich text (HTML/RTF), images (PNG), and copied files. You can filter, search, pin, and re-copy or re-send any item. Default hotkey: Ctrl+Shift+H.
 
+**Morph** rewrites clipboard text using rules or an on‑demand picker (Default hotkey: Ctrl+Shift+M). Built‑in transforms include URL tracking removal, JSON/XML formatting, Base64/URL encoding, case changes, slugify, accent/quote normalization, and line tools. Custom rules can be created and tested in Settings.
+
+**Execute** runs external commands on the clipboard. Configure commands (path, args, working directory, optional match regex) in Settings, then press a hotkey (Default hotkey: Ctrl+Shift+E). If one command matches, it runs; otherwise you pick from a list. Use {clipboard} in arguments or pipe clipboard content to stdin.
 ---
 
 ## Quick Start

@@ -1,5 +1,7 @@
+mod exec;
 mod history;
 mod history_commands;
+mod morph;
 mod settings;
 mod target_providers;
 mod targets;
@@ -58,6 +60,13 @@ pub struct DebugLogQueue(pub Mutex<Vec<DebugLogEntry>>);
 
 pub struct LastClipHash(pub Mutex<Option<u64>>);
 
+/// Hash of a value Morph just wrote to the clipboard, used to ignore the
+/// monitor event triggered by our own write so transforms don't loop.
+pub struct MorphEcho(pub Mutex<Option<u64>>);
+
+/// Morph events queued for the notification window to drain when it first mounts.
+pub struct MorphNotifyQueue(pub Mutex<Vec<serde_json::Value>>);
+
 pub fn hash_text(text: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -71,6 +80,14 @@ pub fn hash_image(bytes: &[u8]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = DefaultHasher::new();
     ("image", bytes).hash(&mut h);
+    h.finish()
+}
+
+pub fn hash_kind(kind: &str, bytes: &[u8]) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    (kind, bytes).hash(&mut h);
     h.finish()
 }
 
@@ -94,6 +111,27 @@ fn history_suppress_next_image_b64(
         *g = Some(hash_image(&bytes));
     }
     Ok(())
+}
+
+#[tauri::command]
+fn history_suppress_next_html(state: tauri::State<'_, LastClipHash>, html: String) {
+    if let Ok(mut g) = state.0.lock() {
+        *g = Some(hash_kind("html", html.as_bytes()));
+    }
+}
+
+#[tauri::command]
+fn history_suppress_next_rtf(state: tauri::State<'_, LastClipHash>, rtf: String) {
+    if let Ok(mut g) = state.0.lock() {
+        *g = Some(hash_kind("rtf", rtf.as_bytes()));
+    }
+}
+
+#[tauri::command]
+fn history_suppress_next_files(state: tauri::State<'_, LastClipHash>, files: Vec<String>) {
+    if let Ok(mut g) = state.0.lock() {
+        *g = Some(hash_kind("files", files.join("\n").as_bytes()));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -137,7 +175,15 @@ pub fn run() {
             get_pending_debug_logs,
             get_debug_sources,
             history_suppress_next_text,
-            history_suppress_next_image_b64
+            history_suppress_next_image_b64,
+            history_suppress_next_html,
+            history_suppress_next_rtf,
+            history_suppress_next_files,
+            get_pending_morph_events,
+            morph::morph_preview,
+            morph::morph_test_rule,
+            exec::exec_run,
+            exec::exec_match_commands
         ])
         .setup(|app| {
             trayicon::setup(app);
@@ -185,10 +231,20 @@ pub fn run() {
             app.manage(DebugLogQueue(Mutex::new(Vec::new())));
 
             app.manage(LastClipHash(Mutex::new(None)));
+            app.manage(MorphEcho(Mutex::new(None)));
+            app.manage(MorphNotifyQueue(Mutex::new(Vec::new())));
 
             // Shared patterns — updated on settings change, read by the single clipboard listener
             let shared_patterns: Arc<Mutex<Vec<Regex>>> =
                 Arc::new(Mutex::new(compile_patterns(&initial_settings.regex_list)));
+
+            // Shared compiled Morph rules — recompiled on settings change.
+            let shared_morph_rules: Arc<Mutex<Vec<morph::CompiledMorphRule>>> =
+                Arc::new(Mutex::new(if initial_settings.morph_enabled {
+                    morph::compile_rules(&initial_settings.morph_rules)
+                } else {
+                    Vec::new()
+                }));
 
             setup_shortcut(app.handle(), &initial_settings);
             apply_autostart(app.handle(), initial_settings.autostart);
@@ -213,6 +269,7 @@ pub fn run() {
             // Register the clipboard listener exactly once
             start_clipboard_pattern_monitor(app.handle(), shared_patterns.clone());
             start_history_capture(app.handle(), history_coord.clone(), shared_patterns.clone());
+            start_morph_monitor(app.handle(), shared_morph_rules.clone());
 
             // Listen for plugin events and show notification window for incoming messages
             let app_handle_events = app.handle().clone();
@@ -234,6 +291,7 @@ pub fn run() {
             let app_handle_listener = app.handle().clone();
             let target_coordinator_listener = target_coordinator.clone();
             let shared_patterns_listener = shared_patterns.clone();
+            let shared_morph_rules_listener = shared_morph_rules.clone();
             let history_coord_listener = history_coord.clone();
             let last_history_settings_listener = last_history_settings.clone();
             app.listen("settings-changed", move |_| {
@@ -254,6 +312,19 @@ pub fn run() {
                             "app",
                             "info",
                             format!("Clipboard patterns updated: {} patterns", p.len()),
+                        );
+                    }
+                    if let Ok(mut r) = shared_morph_rules_listener.lock() {
+                        *r = if settings.morph_enabled {
+                            morph::compile_rules(&settings.morph_rules)
+                        } else {
+                            Vec::new()
+                        };
+                        debug_log(
+                            &app_handle_listener,
+                            "app",
+                            "info",
+                            format!("Morph rules updated: {} active", r.len()),
                         );
                     }
                     if let Ok(mut coord) = target_coordinator_listener.lock() {
@@ -309,6 +380,8 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) {
 pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
     let main_sc = parse_shortcut(app, &settings.global_shortcut);
     let history_sc = parse_shortcut(app, &settings.history_shortcut);
+    let morph_sc = parse_shortcut(app, &settings.morph_shortcut);
+    let exec_sc = parse_shortcut(app, &settings.exec_shortcut);
 
     app.global_shortcut().unregister_all().ok();
 
@@ -341,6 +414,38 @@ pub fn setup_shortcut(app: &AppHandle, settings: &AppSettings) {
                 "app",
                 "error",
                 format!("Failed to register history shortcut: {e}"),
+            );
+        }
+    }
+    if let Some(sc) = morph_sc {
+        debug_log(
+            app,
+            "app",
+            "info",
+            format!("Registering morph shortcut: {sc:?}"),
+        );
+        if let Err(e) = app.global_shortcut().on_shortcut(sc, on_morph_shortcut) {
+            debug_log(
+                app,
+                "app",
+                "error",
+                format!("Failed to register morph shortcut: {e}"),
+            );
+        }
+    }
+    if let Some(sc) = exec_sc {
+        debug_log(
+            app,
+            "app",
+            "info",
+            format!("Registering exec shortcut: {sc:?}"),
+        );
+        if let Err(e) = app.global_shortcut().on_shortcut(sc, on_exec_shortcut) {
+            debug_log(
+                app,
+                "app",
+                "error",
+                format!("Failed to register exec shortcut: {e}"),
             );
         }
     }
@@ -390,6 +495,136 @@ pub fn on_history_shortcut(
         format!("History shortcut pressed: {shortcut:?}"),
     );
     open_history_window(app);
+}
+
+pub fn on_morph_shortcut(
+    app: &AppHandle,
+    shortcut: &tauri_plugin_global_shortcut::Shortcut,
+    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+) {
+    debug_log(
+        app,
+        "app",
+        "info",
+        format!("Morph shortcut pressed: {shortcut:?}"),
+    );
+    open_morph_picker_window(app);
+}
+
+pub fn on_exec_shortcut(
+    app: &AppHandle,
+    shortcut: &tauri_plugin_global_shortcut::Shortcut,
+    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+) {
+    debug_log(
+        app,
+        "app",
+        "info",
+        format!("Exec shortcut pressed: {shortcut:?}"),
+    );
+    handle_exec_shortcut(app);
+}
+
+/// Resolves the exec shortcut: if the feature is enabled and exactly one enabled
+/// command matches the current clipboard, it runs directly; otherwise the picker
+/// window is shown so the user can choose.
+fn handle_exec_shortcut(app: &AppHandle) {
+    let settings = match SettingsCoordinator::from_handle(app) {
+        Ok(s) => s.get_settings().clone(),
+        Err(_) => {
+            open_exec_picker_window(app);
+            return;
+        }
+    };
+
+    let clipboard = app
+        .state::<tauri_plugin_clipboard::Clipboard>()
+        .read_text()
+        .unwrap_or_default();
+
+    if settings.exec_enabled {
+        let matches: Vec<&exec::ExecCommand> = settings
+            .exec_commands
+            .iter()
+            .filter(|c| exec::is_auto_run_match(c, &clipboard))
+            .collect();
+        if matches.len() == 1 {
+            let cmd = matches[0];
+            match exec::run_command(cmd, &clipboard) {
+                Ok(_) => debug_log(app, "exec", "info", format!("Ran command '{}'", cmd.name)),
+                Err(e) => debug_log(app, "exec", "error", e),
+            }
+            return;
+        }
+    }
+
+    open_exec_picker_window(app);
+}
+
+pub fn open_exec_picker_window(app: &AppHandle) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if let Some(window) = app.get_webview_window("exec-picker") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    match WebviewWindowBuilder::new(app, "exec-picker", WebviewUrl::App("exec-picker".into()))
+        .title("Execute - clipygo")
+        .devtools(true)
+        .inner_size(560.0, 480.0)
+        .decorations(false)
+        .center()
+        .build()
+    {
+        Ok(window) => {
+            let clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = clone.hide();
+                }
+            });
+        }
+        Err(e) => debug_log(
+            app,
+            "app",
+            "error",
+            format!("Failed to create exec picker window: {e}"),
+        ),
+    }
+}
+
+pub fn open_morph_picker_window(app: &AppHandle) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if let Some(window) = app.get_webview_window("morph-picker") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    match WebviewWindowBuilder::new(app, "morph-picker", WebviewUrl::App("morph-picker".into()))
+        .title("Morph - clipygo")
+        .devtools(true)
+        .inner_size(560.0, 540.0)
+        .decorations(false)
+        .center()
+        .build()
+    {
+        Ok(window) => {
+            let clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = clone.hide();
+                }
+            });
+        }
+        Err(e) => debug_log(
+            app,
+            "app",
+            "error",
+            format!("Failed to create morph picker window: {e}"),
+        ),
+    }
 }
 
 pub fn open_history_window(app: &AppHandle) {
@@ -637,6 +872,14 @@ fn get_pending_debug_logs(
 }
 
 #[tauri::command]
+fn get_pending_morph_events(
+    queue: tauri::State<'_, MorphNotifyQueue>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut events = queue.0.lock().map_err(|e| format!("Lock error: {e}"))?;
+    Ok(events.drain(..).collect())
+}
+
+#[tauri::command]
 fn get_debug_sources(
     coordinator: tauri::State<'_, Arc<Mutex<TargetProviderCoordinator>>>,
 ) -> Result<Vec<String>, String> {
@@ -731,28 +974,40 @@ fn start_history_capture(
             }
             let clipboard = app_handle.state::<tauri_plugin_clipboard::Clipboard>();
             let last_hash_state = app_handle.state::<LastClipHash>();
-            if matches!(clipboard.has_text(), Ok(true)) {
-                if let Ok(text) = clipboard.read_text() {
-                    if text.is_empty() {
-                        return;
+
+            let is_new = |h: u64| -> bool {
+                if let Ok(mut guard) = last_hash_state.0.lock() {
+                    if *guard == Some(h) {
+                        return false;
                     }
-                    let h = hash_text(&text);
-                    if let Ok(mut guard) = last_hash_state.0.lock() {
-                        if *guard == Some(h) {
+                    *guard = Some(h);
+                    return true;
+                }
+                false
+            };
+            let match_pattern = |s: &str| -> Option<String> {
+                shared_patterns.lock().ok().and_then(|p| {
+                    p.iter()
+                        .find(|r| r.is_match(s))
+                        .map(|r| r.as_str().to_string())
+                })
+            };
+
+            if matches!(clipboard.has_files(), Ok(true)) {
+                if let Ok(files) = clipboard.read_files() {
+                    let files: Vec<String> = files.into_iter().filter(|f| !f.is_empty()).collect();
+                    if !files.is_empty() {
+                        let joined = files.join("\n");
+                        if !is_new(hash_kind("files", joined.as_bytes())) {
                             return;
                         }
-                        *guard = Some(h);
+                        let matched = match_pattern(&joined);
+                        if let Ok(mut hist) = history_coord.lock() {
+                            let _ = hist.insert_files(files, matched);
+                        }
+                        history::notify_changed(&app_handle);
+                        return;
                     }
-                    let matched = shared_patterns.lock().ok().and_then(|p| {
-                        p.iter()
-                            .find(|r| r.is_match(&text))
-                            .map(|r| r.as_str().to_string())
-                    });
-                    if let Ok(mut hist) = history_coord.lock() {
-                        let _ = hist.insert_text(text, matched);
-                    }
-                    history::notify_changed(&app_handle);
-                    return;
                 }
             }
             if matches!(clipboard.has_image(), Ok(true)) {
@@ -760,16 +1015,58 @@ fn start_history_capture(
                     if bytes.is_empty() {
                         return;
                     }
-                    let h = hash_image(&bytes);
-                    if let Ok(mut guard) = last_hash_state.0.lock() {
-                        if *guard == Some(h) {
-                            return;
-                        }
-                        *guard = Some(h);
+                    if !is_new(hash_image(&bytes)) {
+                        return;
                     }
                     let (w, ht) = parse_png_dimensions(&bytes).unwrap_or((0, 0));
                     if let Ok(mut hist) = history_coord.lock() {
                         let _ = hist.insert_image("image/png".into(), w, ht, bytes, None);
+                    }
+                    history::notify_changed(&app_handle);
+                    return;
+                }
+            }
+            if matches!(clipboard.has_html(), Ok(true)) {
+                if let Ok(html) = clipboard.read_html() {
+                    if !html.trim().is_empty() {
+                        if !is_new(hash_kind("html", html.as_bytes())) {
+                            return;
+                        }
+                        let matched = match_pattern(&html);
+                        if let Ok(mut hist) = history_coord.lock() {
+                            let _ = hist.insert_html(html, matched);
+                        }
+                        history::notify_changed(&app_handle);
+                        return;
+                    }
+                }
+            }
+            if matches!(clipboard.has_rtf(), Ok(true)) {
+                if let Ok(rtf) = clipboard.read_rtf() {
+                    if !rtf.trim().is_empty() {
+                        if !is_new(hash_kind("rtf", rtf.as_bytes())) {
+                            return;
+                        }
+                        let matched = match_pattern(&rtf);
+                        if let Ok(mut hist) = history_coord.lock() {
+                            let _ = hist.insert_rtf(rtf, matched);
+                        }
+                        history::notify_changed(&app_handle);
+                        return;
+                    }
+                }
+            }
+            if matches!(clipboard.has_text(), Ok(true)) {
+                if let Ok(text) = clipboard.read_text() {
+                    if text.is_empty() {
+                        return;
+                    }
+                    if !is_new(hash_text(&text)) {
+                        return;
+                    }
+                    let matched = match_pattern(&text);
+                    if let Ok(mut hist) = history_coord.lock() {
+                        let _ = hist.insert_text(text, matched);
                     }
                     history::notify_changed(&app_handle);
                 }
@@ -817,4 +1114,139 @@ fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<V
             }
         },
     );
+}
+
+/// Built-in Morph feature: on each clipboard update, apply the first matching
+/// rule in-place (rewriting the clipboard) and pop a notification window.
+/// Rules are read from `shared_rules` on every event, so updates take effect immediately.
+fn start_morph_monitor(app: &AppHandle, shared_rules: Arc<Mutex<Vec<morph::CompiledMorphRule>>>) {
+    let app_handle = app.clone();
+    app.listen(
+        "plugin:clipboard://clipboard-monitor/update",
+        move |_event| {
+            let clipboard = app_handle.state::<tauri_plugin_clipboard::Clipboard>();
+            let text = match clipboard.read_text() {
+                Ok(t) => t,
+                Err(_) => return,
+            };
+            if text.is_empty() {
+                return;
+            }
+            let h_in = hash_text(&text);
+
+            // Ignore the monitor event caused by our own write-back.
+            if let Some(echo) = app_handle.try_state::<MorphEcho>() {
+                if let Ok(mut g) = echo.0.lock() {
+                    if *g == Some(h_in) {
+                        *g = None;
+                        return;
+                    }
+                }
+            }
+
+            let result = {
+                let rules = match shared_rules.lock() {
+                    Ok(r) => r,
+                    Err(_) => return,
+                };
+                if rules.is_empty() {
+                    return;
+                }
+                morph::apply_first(&rules, &text)
+            };
+
+            if let Some(result) = result {
+                if let Some(echo) = app_handle.try_state::<MorphEcho>() {
+                    if let Ok(mut g) = echo.0.lock() {
+                        *g = Some(hash_text(&result.output));
+                    }
+                }
+                if let Err(e) = clipboard.write_text(result.output.clone()) {
+                    debug_log(
+                        &app_handle,
+                        "morph",
+                        "error",
+                        format!("write-back failed: {e}"),
+                    );
+                    return;
+                }
+                debug_log(
+                    &app_handle,
+                    "morph",
+                    "info",
+                    format!("Applied rule '{}'", result.rule_name),
+                );
+                show_morph_window(&app_handle, &result.rule_name, &text, &result.output);
+            }
+        },
+    );
+}
+
+/// Shows the Morph notification window (creating it if needed), styled like the
+/// incoming-message popup but fully independent of plugins.
+fn show_morph_window(app: &AppHandle, rule_name: &str, before: &str, after: &str) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    let payload = serde_json::json!({
+        "rule_name": rule_name,
+        "before": before,
+        "after": after,
+        "timestamp": SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64(),
+    });
+
+    if let Some(window) = app.get_webview_window("morph") {
+        let _ = app.emit("morph-event", &payload);
+        let _ = window.show();
+        return;
+    }
+
+    // First time: queue the event so the window can drain it once its JS mounts.
+    if let Some(queue) = app.try_state::<MorphNotifyQueue>() {
+        if let Ok(mut q) = queue.0.lock() {
+            if q.len() >= 50 {
+                q.remove(0);
+            }
+            q.push(payload.clone());
+        }
+    }
+
+    match WebviewWindowBuilder::new(app, "morph", WebviewUrl::App("morph".into()))
+        .title("clipygo — morph")
+        .inner_size(360.0, 300.0)
+        .decorations(false)
+        .always_on_top(true)
+        .focused(false)
+        .visible(false)
+        .devtools(true)
+        .build()
+    {
+        Ok(window) => {
+            if let Ok(Some(monitor)) = window.current_monitor() {
+                let screen = monitor.size();
+                let scale = monitor.scale_factor();
+                let x = (screen.width as f64 / scale) - 370.0;
+                let y = (screen.height as f64 / scale) - 310.0;
+                let _ = window
+                    .set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+            }
+            let _ = window.show();
+
+            let window_clone = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window_clone.hide();
+                }
+            });
+        }
+        Err(e) => debug_log(
+            app,
+            "morph",
+            "error",
+            format!("Failed to create morph window: {e}"),
+        ),
+    }
 }
