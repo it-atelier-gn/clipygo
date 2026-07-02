@@ -14,6 +14,7 @@ It sits in your system tray, monitors the clipboard for regex matches (meeting l
 **Morph** rewrites clipboard text using rules or an on‑demand picker (Default hotkey: Ctrl+Shift+M). Built‑in transforms include URL tracking removal, JSON/XML formatting, Base64/URL encoding, case changes, slugify, accent/quote normalization, and line tools. Custom rules can be created and tested in Settings.
 
 **Execute** runs external commands on the clipboard. Configure commands (path, args, working directory, optional match regex) in Settings, then press a hotkey (Default hotkey: Ctrl+Shift+E). If one command matches, it runs; otherwise you pick from a list. Use {clipboard} in arguments or pipe clipboard content to stdin.
+
 ---
 
 ## Quick Start
