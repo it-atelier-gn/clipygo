@@ -11,6 +11,7 @@
     hasImage,
     readImageBase64,
     hasHTML,
+    readHtml,
     hasFiles,
     readFiles,
   } from "tauri-plugin-clipboard-api";
@@ -39,12 +40,15 @@
     errors: PluginError[];
   }
 
+  // Formats ranked richest-first; a target gets sent the best format it supports.
+  const FORMAT_PRIORITY = ['files', 'html', 'image', 'text'] as const;
+
   let unlistenWindowEvents: UnlistenFn;
   let unlistenClipboard: UnlistenFn;
   let clipboardContent = "";
+  let clipboardHtml = ""; // raw HTML markup when clipboard has rich text
   let clipboardImage = ""; // base64 PNG when clipboard has an image
   let clipboardFiles: string[] = [];
-  let clipboardIsRich = false;
   let targets: Target[] = [];
   let pluginErrors: PluginError[] = [];
   let loadingTargets = false;
@@ -53,11 +57,25 @@
   let messageType: 'success' | 'error' | '' = '';
   let selectedTargetIndex = 0;
 
+  // What's actually shown in the "Clipboard Content" panel (mutually exclusive).
   $: clipboardFormat = clipboardFiles.length ? 'files' : clipboardContent ? 'text' : clipboardImage ? 'image' : null;
-  $: compatibleCount = targets.filter(t => clipboardFormat !== null && t.formats.includes(clipboardFormat)).length;
+
+  $: formatContent = {
+    files: clipboardFiles.join('\n'),
+    html: clipboardHtml,
+    image: clipboardImage,
+    text: clipboardContent,
+  };
+  $: availableFormats = FORMAT_PRIORITY.filter(f => formatContent[f].length > 0);
+
+  function bestFormatFor(target: Target): typeof FORMAT_PRIORITY[number] | null {
+    return FORMAT_PRIORITY.find(f => availableFormats.includes(f) && target.formats.includes(f)) ?? null;
+  }
+
+  $: compatibleCount = targets.filter(t => bestFormatFor(t) !== null).length;
 
   function isCompatible(target: Target): boolean {
-    return clipboardFormat !== null && target.formats.includes(clipboardFormat);
+    return bestFormatFor(target) !== null;
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -107,23 +125,23 @@
       if (await hasFiles()) {
         clipboardFiles = await readFiles();
         clipboardContent = "";
+        clipboardHtml = "";
         clipboardImage = "";
-        clipboardIsRich = false;
       } else if (await hasText()) {
         clipboardContent = await readText();
+        clipboardHtml = (await hasHTML()) ? await readHtml() : "";
         clipboardImage = "";
         clipboardFiles = [];
-        clipboardIsRich = await hasHTML();
       } else if (await hasImage()) {
         clipboardImage = await readImageBase64();
         clipboardContent = "";
+        clipboardHtml = "";
         clipboardFiles = [];
-        clipboardIsRich = false;
       } else {
         clipboardContent = "";
+        clipboardHtml = "";
         clipboardImage = "";
         clipboardFiles = [];
-        clipboardIsRich = false;
       }
     } catch (e) {
       console.error('Failed to read clipboard:', e);
@@ -150,13 +168,14 @@
   }
 
   async function sendToTarget(target: Target, fromClick = false) {
-    if (!clipboardFormat) {
+    if (availableFormats.length === 0) {
       showMessage('No clipboard content to send', 'error');
       return;
     }
 
-    if (!isCompatible(target)) {
-      showMessage(`${target.title} does not support ${clipboardFormat} content`, 'error');
+    const format = bestFormatFor(target);
+    if (!format) {
+      showMessage(`${target.title} does not support ${clipboardFormat ?? 'this'} content`, 'error');
       return;
     }
 
@@ -168,10 +187,10 @@
     sendingTo = target.id;
     try {
       const payload: SendPayload = {
-        content: clipboardFormat === 'image' ? clipboardImage : clipboardContent,
-        format: clipboardFormat
+        content: formatContent[format],
+        format
       };
-      
+
       await invoke('send_to_target', { 
         targetId: target.id, 
         payload 
@@ -277,7 +296,7 @@
           {#if clipboardFiles.length}
             <span class="badge badge-primary" data-tauri-drag-region>{clipboardFiles.length} {clipboardFiles.length === 1 ? 'file' : 'files'}</span>
           {:else if clipboardContent}
-            <span class="badge badge-primary" data-tauri-drag-region>{clipboardIsRich ? 'rich text · ' : ''}{clipboardContent.length} chars</span>
+            <span class="badge badge-primary" data-tauri-drag-region>{clipboardHtml ? 'rich text · ' : ''}{clipboardContent.length} chars</span>
           {:else if clipboardImage}
             <span class="badge badge-primary" data-tauri-drag-region>image</span>
           {/if}

@@ -56,6 +56,17 @@ The optional `link` field provides a URL shown next to the plugin name in settin
 }
 ```
 
+`formats` declares which clipboard content types this target accepts:
+
+| Format  | `content` value                                                    |
+|---------|----------------------------------------------------------------------|
+| `text`  | Plain text                                                          |
+| `html`  | Raw HTML markup (only sent when the clipboard actually has rich text) |
+| `image` | Base64-encoded PNG                                                  |
+| `files` | Newline-joined absolute file paths                                  |
+
+When the clipboard offers more than one usable format (e.g. both plain text and HTML), clipygo picks the richest format each target declares support for, in priority order `files` > `html` > `image` > `text` — not a single global format for every target. A target that lists `["html", "text"]` gets HTML when the clipboard has rich text, and plain text otherwise.
+
 ### `send` — send clipboard content to a target
 
 ```json
@@ -93,12 +104,37 @@ The optional `link` field provides a URL shown next to the plugin name in settin
 
 If this command is implemented, clipygo shows a **Configure** button next to the plugin in Settings.
 
-Supported field types: `string` (text input), `string` with `format: "password"` (password input with visibility toggle), `string` with `enum` (select), `boolean` (toggle).
+Supported field types: `string` (text input), `string` with `format: "password"` (password input with visibility toggle), `string` with `enum` (select), `boolean` (toggle), `array` (editable list of objects, see below).
 
 Optional field features:
 - `instructions` — plain text shown above the config fields (supports newlines)
 - `visibleIf` — conditionally show a field based on another field's value: `"visibleIf": {"field": "value"}` or `"visibleIf": {"field": ["a","b"]}` for multiple values
 - `readOnly` — display-only field that cannot be edited by the user (excluded from `set_config` values)
+
+#### `array` fields
+
+An `array` field renders as a list of rows, each with inline inputs for its `items` sub-schema, a **Remove** button per row, and a **+ Add** button. Only `type: "string"` item properties are supported. Optional `maxItems` caps the list length.
+
+```json
+{
+  "contacts": {
+    "type": "array",
+    "title": "Contacts",
+    "description": "People you can send to",
+    "maxItems": 20,
+    "items": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "title": "Name" },
+        "id":   { "type": "string", "title": "ID" }
+      },
+      "required": ["name", "id"]
+    }
+  }
+}
+```
+
+`set_config` receives the field's value as a JSON array of objects, e.g. `[{"name": "Alice", "id": "abc123"}]`.
 
 ### `set_config` *(optional)* — apply configuration values saved by the user
 
