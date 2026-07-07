@@ -789,7 +789,10 @@ mod tests {
         let (contents, suppress) = prepare_clipboard_write(&payload).unwrap();
         assert_eq!(contents.len(), 2);
         assert!(matches!(&contents[0], ClipboardContent::Files(_)));
-        assert_eq!(suppress, hash_kind("files", "C:\\a.txt\nC:\\b.txt".as_bytes()));
+        assert_eq!(
+            suppress,
+            hash_kind("files", "C:\\a.txt\nC:\\b.txt".as_bytes())
+        );
     }
 
     #[test]
