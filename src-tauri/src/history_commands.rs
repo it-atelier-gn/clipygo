@@ -1,13 +1,13 @@
 use std::sync::{Arc, Mutex};
 
 use base64::Engine;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
-use crate::history::{Filter, HistoryCoordinator, HistoryEntryView, Stats};
+use crate::history::{Filter, FullEntry, HistoryCoordinator, HistoryEntryView, Stats};
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 pub struct ResendPayload {
     pub kind: String,
     pub text: Option<String>,
@@ -16,6 +16,28 @@ pub struct ResendPayload {
     pub files: Option<Vec<String>>,
     pub image_base64: Option<String>,
     pub mime: Option<String>,
+}
+
+pub fn payload_from_full_entry(full: FullEntry) -> ResendPayload {
+    let mut payload = ResendPayload {
+        kind: full.kind,
+        text: full.text,
+        html: full.html,
+        rtf: full.rtf,
+        files: full.files,
+        image_base64: full
+            .image
+            .map(|b| base64::engine::general_purpose::STANDARD.encode(b)),
+        mime: full.mime,
+    };
+    if payload.text.is_none() {
+        if let Some(html) = &payload.html {
+            payload.text = Some(crate::history::html_to_text(html));
+        } else if let Some(rtf) = &payload.rtf {
+            payload.text = Some(crate::history::rtf_to_text(rtf));
+        }
+    }
+    payload
 }
 
 #[tauri::command]
@@ -51,55 +73,10 @@ pub fn history_resend(
     id: Uuid,
 ) -> Result<ResendPayload, String> {
     let guard = coord.lock().map_err(|_| "history lock poisoned")?;
-    let entry = guard
-        .get_entry(id)?
+    let full = guard
+        .get_full_entry(id)?
         .ok_or_else(|| "entry not found".to_string())?;
-    match entry.kind.as_str() {
-        "image" => {
-            let bytes = guard.get_image(id)?;
-            Ok(ResendPayload {
-                kind: "image".into(),
-                image_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes)),
-                mime: entry.mime,
-                ..Default::default()
-            })
-        }
-        "html" => {
-            let html = entry.text.unwrap_or_default();
-            Ok(ResendPayload {
-                kind: "html".into(),
-                text: Some(crate::history::html_to_text(&html)),
-                html: Some(html),
-                mime: entry.mime,
-                ..Default::default()
-            })
-        }
-        "rtf" => Ok(ResendPayload {
-            kind: "rtf".into(),
-            rtf: entry.text,
-            mime: entry.mime,
-            ..Default::default()
-        }),
-        "files" => {
-            let files = entry
-                .text
-                .unwrap_or_default()
-                .lines()
-                .filter(|l| !l.is_empty())
-                .map(|l| l.to_string())
-                .collect();
-            Ok(ResendPayload {
-                kind: "files".into(),
-                files: Some(files),
-                ..Default::default()
-            })
-        }
-        _ => Ok(ResendPayload {
-            kind: "text".into(),
-            text: entry.text,
-            ..Default::default()
-        }),
-    }
+    Ok(payload_from_full_entry(full))
 }
 
 #[tauri::command]
@@ -158,4 +135,55 @@ pub fn history_clear(
     }
     crate::history::notify_changed(&app);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn payload_keeps_stored_text() {
+        let payload = payload_from_full_entry(FullEntry {
+            kind: "html".into(),
+            html: Some("<b>rich</b>".into()),
+            text: Some("stored".into()),
+            ..Default::default()
+        });
+        assert_eq!(payload.text.as_deref(), Some("stored"));
+        assert_eq!(payload.html.as_deref(), Some("<b>rich</b>"));
+    }
+
+    #[test]
+    fn payload_derives_text_from_html() {
+        let payload = payload_from_full_entry(FullEntry {
+            kind: "html".into(),
+            html: Some("<p>Hello <b>world</b></p>".into()),
+            ..Default::default()
+        });
+        assert_eq!(payload.text.as_deref(), Some("Hello world"));
+    }
+
+    #[test]
+    fn payload_derives_text_from_rtf() {
+        let payload = payload_from_full_entry(FullEntry {
+            kind: "rtf".into(),
+            rtf: Some(r"{\rtf1\ansi Hello \b world\b0 .}".into()),
+            ..Default::default()
+        });
+        assert_eq!(payload.text.as_deref(), Some("Hello world."));
+        assert!(payload.rtf.is_some());
+    }
+
+    #[test]
+    fn payload_encodes_image_base64() {
+        let payload = payload_from_full_entry(FullEntry {
+            kind: "image".into(),
+            mime: Some("image/png".into()),
+            image: Some(vec![1, 2, 3]),
+            ..Default::default()
+        });
+        assert_eq!(payload.kind, "image");
+        assert_eq!(payload.image_base64.as_deref(), Some("AQID"));
+        assert_eq!(payload.mime.as_deref(), Some("image/png"));
+    }
 }

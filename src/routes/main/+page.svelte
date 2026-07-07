@@ -40,14 +40,14 @@
     errors: PluginError[];
   }
 
-  // Formats ranked richest-first; a target gets sent the best format it supports.
   const FORMAT_PRIORITY = ['files', 'html', 'image', 'text'] as const;
 
   let unlistenWindowEvents: UnlistenFn;
   let unlistenClipboard: UnlistenFn;
+  let unlistenShown: UnlistenFn;
   let clipboardContent = "";
-  let clipboardHtml = ""; // raw HTML markup when clipboard has rich text
-  let clipboardImage = ""; // base64 PNG when clipboard has an image
+  let clipboardHtml = "";
+  let clipboardImage = "";
   let clipboardFiles: string[] = [];
   let targets: Target[] = [];
   let pluginErrors: PluginError[] = [];
@@ -57,7 +57,6 @@
   let messageType: 'success' | 'error' | '' = '';
   let selectedTargetIndex = 0;
 
-  // What's actually shown in the "Clipboard Content" panel (mutually exclusive).
   $: clipboardFormat = clipboardFiles.length ? 'files' : clipboardContent ? 'text' : clipboardImage ? 'image' : null;
 
   $: formatContent = {
@@ -110,7 +109,6 @@
     }, 3000);
   }
 
-  // Handle image error - show fallback instead
   function handleImageError(event: Event) {
     const img = event.target as HTMLImageElement;
     const fallback = img.nextElementSibling as HTMLElement;
@@ -158,7 +156,7 @@
       const result: GetTargetsResult = await invoke('get_targets');
       targets = result.targets;
       pluginErrors = result.errors;
-      selectedTargetIndex = 0; // Reset selection
+      selectedTargetIndex = 0;
     } catch (error) {
       console.error('Failed to load targets:', error);
       showMessage('Failed to load targets', 'error');
@@ -179,7 +177,6 @@
       return;
     }
 
-    // Update selected index if clicked
     if (fromClick) {
       selectedTargetIndex = targets.findIndex(t => t.id === target.id);
     }
@@ -198,7 +195,6 @@
 
       showMessage(`Content sent to ${target.title}`, 'success');
 
-      // Hide window after successful send
       setTimeout(() => {
         const window = getCurrentWebviewWindow();
         window.hide();
@@ -218,18 +214,25 @@
 
     document.addEventListener('keydown', handleKeydown);
 
-    // Refresh on window focus (e.g. hotkey shows window)
     unlistenWindowEvents = await listen('tauri://focus', async () => {
       await readClipboard();
       await loadTargets();
     });
 
-    // Also refresh whenever clipboard changes while window is open
+    unlistenShown = await getCurrentWebviewWindow().listen('window-shown', async () => {
+      message = "";
+      messageType = '';
+      sendingTo = null;
+      selectedTargetIndex = 0;
+      await readClipboard();
+      await loadTargets();
+      document.querySelector('.content')?.scrollTo(0, 0);
+    });
+
     unlistenClipboard = await listen('plugin:clipboard://clipboard-monitor/update', async () => {
       await readClipboard();
     });
 
-    // Load initial content and targets
     await readClipboard();
     await loadTargets();
   });
@@ -239,16 +242,15 @@
     document.removeEventListener('keydown', handleKeydown);
     if (unlistenWindowEvents) unlistenWindowEvents();
     if (unlistenClipboard) unlistenClipboard();
+    if (unlistenShown) unlistenShown();
   });
 
-  // Reactive statement to ensure selectedTargetIndex stays in bounds
   $: if (targets.length > 0 && selectedTargetIndex >= targets.length) {
     selectedTargetIndex = 0;
   }
 </script>
 
 <div class="app" data-tauri-drag-region>
-  <!-- Header -->
   <header class="header" data-tauri-drag-region>
     <div class="header-content flex justify-between items-center" data-tauri-drag-region>
       <h1 class="h2 title-shimmer" data-tauri-drag-region>📋 clipygo</h1>
@@ -271,14 +273,12 @@
     </div>
   </header>
 
-  <!-- Message -->
   {#if message}
     <div class="message message-{messageType}" data-tauri-drag-region>
       {message}
     </div>
   {/if}
 
-  <!-- Plugin error warnings -->
   {#if pluginErrors.length > 0}
     <div class="plugin-errors" data-tauri-drag-region>
       {#each pluginErrors as err}
@@ -289,7 +289,6 @@
 
   <div class="content" data-tauri-drag-region>
     <div class="transfer-layout" data-tauri-drag-region>
-      <!-- Clipboard Content (Left) -->
       <section class="card clipboard-section" data-tauri-drag-region>
         <header class="card-header">
           <h2 class="h4 clipboard-header">📄 Clipboard Content</h2>
@@ -330,7 +329,6 @@
         </div>
       </section>
 
-      <!-- Transfer Arrow (Middle) -->
       <div class="transfer-arrow" data-tauri-drag-region>
         <div class="arrow-container" data-tauri-drag-region>
           {#if sendingTo}
@@ -341,7 +339,6 @@
         </div>
       </div>
 
-      <!-- Targets (Right) -->
       <section class="card targets-section" data-tauri-drag-region>
         <header class="card-header" data-tauri-drag-region>
           <h2 class="h4" data-tauri-drag-region>🎯 Targets</h2>
@@ -426,7 +423,6 @@
     </div>
   </div>
 
-  <!-- Footer -->
   <footer class="footer" data-tauri-drag-region>
     <div class="footer-content text-center" data-tauri-drag-region>
       <span class="footer-hint text-muted" data-tauri-drag-region>Use <kbd class="key" data-tauri-drag-region>↑↓</kbd> to select • <kbd class="key" data-tauri-drag-region>ENTER</kbd> to send • <kbd class="key" data-tauri-drag-region>ESC</kbd> to hide</span>

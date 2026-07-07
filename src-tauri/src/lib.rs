@@ -1,6 +1,7 @@
+pub mod cf_html;
 mod exec;
-mod history;
-mod history_commands;
+pub mod history;
+pub mod history_commands;
 mod morph;
 mod settings;
 mod target_providers;
@@ -91,47 +92,82 @@ pub fn hash_kind(kind: &str, bytes: &[u8]) -> u64 {
     h.finish()
 }
 
-#[tauri::command]
-fn history_suppress_next_text(state: tauri::State<'_, LastClipHash>, text: String) {
-    if let Ok(mut g) = state.0.lock() {
-        *g = Some(hash_text(&text));
+pub fn prepare_clipboard_write(
+    payload: &history_commands::ResendPayload,
+) -> Result<(Vec<clipboard_rs::ClipboardContent>, u64), String> {
+    use clipboard_rs::ClipboardContent;
+    let mut contents: Vec<ClipboardContent> = Vec::new();
+    let mut suppress: Option<u64> = None;
+    if let Some(files) = &payload.files {
+        if !files.is_empty() {
+            contents.push(ClipboardContent::Files(files.clone()));
+            suppress.get_or_insert_with(|| hash_kind("files", files.join("\n").as_bytes()));
+        }
+    }
+    if let Some(html) = &payload.html {
+        #[cfg(windows)]
+        {
+            let (cf, readback) = cf_html::wrap(html);
+            contents.push(ClipboardContent::Html(cf));
+            suppress.get_or_insert_with(|| hash_kind("html", readback.as_bytes()));
+        }
+        #[cfg(not(windows))]
+        {
+            contents.push(ClipboardContent::Html(html.clone()));
+            suppress.get_or_insert_with(|| hash_kind("html", html.as_bytes()));
+        }
+    }
+    if let Some(rtf) = &payload.rtf {
+        contents.push(ClipboardContent::Rtf(rtf.clone()));
+        suppress.get_or_insert_with(|| hash_kind("rtf", rtf.as_bytes()));
+    }
+    if let Some(text) = &payload.text {
+        contents.push(ClipboardContent::Text(text.clone()));
+        suppress.get_or_insert_with(|| hash_text(text));
+    }
+    match suppress {
+        Some(h) => Ok((contents, h)),
+        None => Err("nothing to write".into()),
     }
 }
 
+pub fn show_window_fresh(window: &tauri::WebviewWindow) {
+    if !window.is_visible().unwrap_or(false) {
+        let _ = window.emit_to(window.label(), "window-shown", ());
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
 #[tauri::command]
-fn history_suppress_next_image_b64(
+fn clipboard_write_payload(
+    clipboard: tauri::State<'_, tauri_plugin_clipboard::Clipboard>,
     state: tauri::State<'_, LastClipHash>,
-    image_base64: String,
+    payload: history_commands::ResendPayload,
 ) -> Result<(), String> {
-    use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(image_base64.as_bytes())
-        .map_err(|e| e.to_string())?;
-    if let Ok(mut g) = state.0.lock() {
-        *g = Some(hash_image(&bytes));
+    use clipboard_rs::Clipboard as _;
+    if payload.kind == "image" {
+        use base64::Engine;
+        let b64 = payload
+            .image_base64
+            .ok_or_else(|| "missing image data".to_string())?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64.as_bytes())
+            .map_err(|e| e.to_string())?;
+        if let Ok(mut g) = state.0.lock() {
+            *g = Some(hash_image(&bytes));
+        }
+        return clipboard.write_image_binary(bytes);
     }
-    Ok(())
-}
-
-#[tauri::command]
-fn history_suppress_next_html(state: tauri::State<'_, LastClipHash>, html: String) {
+    let (contents, suppress_hash) = prepare_clipboard_write(&payload)?;
     if let Ok(mut g) = state.0.lock() {
-        *g = Some(hash_kind("html", html.as_bytes()));
+        *g = Some(suppress_hash);
     }
-}
-
-#[tauri::command]
-fn history_suppress_next_rtf(state: tauri::State<'_, LastClipHash>, rtf: String) {
-    if let Ok(mut g) = state.0.lock() {
-        *g = Some(hash_kind("rtf", rtf.as_bytes()));
-    }
-}
-
-#[tauri::command]
-fn history_suppress_next_files(state: tauri::State<'_, LastClipHash>, files: Vec<String>) {
-    if let Ok(mut g) = state.0.lock() {
-        *g = Some(hash_kind("files", files.join("\n").as_bytes()));
-    }
+    let ctx = clipboard
+        .clipboard
+        .lock()
+        .map_err(|_| "clipboard lock poisoned")?;
+    ctx.set(contents).map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -174,11 +210,7 @@ pub fn run() {
             history_commands::history_clear,
             get_pending_debug_logs,
             get_debug_sources,
-            history_suppress_next_text,
-            history_suppress_next_image_b64,
-            history_suppress_next_html,
-            history_suppress_next_rtf,
-            history_suppress_next_files,
+            clipboard_write_payload,
             get_pending_morph_events,
             morph::morph_preview,
             morph::morph_test_rule,
@@ -478,8 +510,7 @@ pub fn on_main_shortcut(
         format!("Main shortcut pressed: {shortcut:?}"),
     );
     if let Some(window) = app.get_webview_window("main") {
-        window.show().unwrap();
-        window.set_focus().unwrap();
+        show_window_fresh(&window);
     }
 }
 
@@ -564,8 +595,7 @@ fn handle_exec_shortcut(app: &AppHandle) {
 pub fn open_exec_picker_window(app: &AppHandle) {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
     if let Some(window) = app.get_webview_window("exec-picker") {
-        let _ = window.show();
-        let _ = window.set_focus();
+        show_window_fresh(&window);
         return;
     }
     match WebviewWindowBuilder::new(app, "exec-picker", WebviewUrl::App("exec-picker".into()))
@@ -597,14 +627,13 @@ pub fn open_exec_picker_window(app: &AppHandle) {
 pub fn open_morph_picker_window(app: &AppHandle) {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
     if let Some(window) = app.get_webview_window("morph-picker") {
-        let _ = window.show();
-        let _ = window.set_focus();
+        show_window_fresh(&window);
         return;
     }
     match WebviewWindowBuilder::new(app, "morph-picker", WebviewUrl::App("morph-picker".into()))
         .title("Morph - clipygo")
         .devtools(true)
-        .inner_size(560.0, 540.0)
+        .inner_size(560.0, 640.0)
         .decorations(false)
         .center()
         .build()
@@ -630,8 +659,7 @@ pub fn open_morph_picker_window(app: &AppHandle) {
 pub fn open_history_window(app: &AppHandle) {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
     if let Some(window) = app.get_webview_window("history") {
-        let _ = window.show();
-        let _ = window.set_focus();
+        show_window_fresh(&window);
         return;
     }
     match WebviewWindowBuilder::new(app, "history", WebviewUrl::App("history".into()))
@@ -697,6 +725,81 @@ fn compile_patterns(regex_list: &[String]) -> Vec<Regex> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clipboard_rs::ClipboardContent;
+    use history_commands::ResendPayload;
+
+    #[test]
+    fn prepare_clipboard_write_html_and_text() {
+        let payload = ResendPayload {
+            kind: "html".into(),
+            html: Some("<b>hi</b>".into()),
+            text: Some("hi".into()),
+            ..Default::default()
+        };
+        let (contents, suppress) = prepare_clipboard_write(&payload).unwrap();
+        assert_eq!(contents.len(), 2);
+        match &contents[0] {
+            ClipboardContent::Html(h) => {
+                #[cfg(windows)]
+                {
+                    assert!(h.starts_with("Version:0.9\r\nStartHTML:"));
+                    assert!(h.contains("<b>hi</b>"));
+                }
+                #[cfg(not(windows))]
+                assert_eq!(h, "<b>hi</b>");
+            }
+            _ => panic!("expected html first"),
+        }
+        match &contents[1] {
+            ClipboardContent::Text(t) => assert_eq!(t, "hi"),
+            _ => panic!("expected text second"),
+        }
+        #[cfg(windows)]
+        {
+            let (_, readback) = cf_html::wrap("<b>hi</b>");
+            assert_eq!(suppress, hash_kind("html", readback.as_bytes()));
+        }
+        #[cfg(not(windows))]
+        assert_eq!(suppress, hash_kind("html", "<b>hi</b>".as_bytes()));
+    }
+
+    #[test]
+    fn prepare_clipboard_write_rtf_with_text_fallback() {
+        let payload = ResendPayload {
+            kind: "rtf".into(),
+            rtf: Some(r"{\rtf1 hi}".into()),
+            text: Some("hi".into()),
+            ..Default::default()
+        };
+        let (contents, suppress) = prepare_clipboard_write(&payload).unwrap();
+        assert_eq!(contents.len(), 2);
+        assert!(matches!(&contents[0], ClipboardContent::Rtf(_)));
+        assert!(matches!(&contents[1], ClipboardContent::Text(_)));
+        assert_eq!(suppress, hash_kind("rtf", r"{\rtf1 hi}".as_bytes()));
+    }
+
+    #[test]
+    fn prepare_clipboard_write_files_take_suppress_priority() {
+        let payload = ResendPayload {
+            kind: "files".into(),
+            files: Some(vec!["C:\\a.txt".into(), "C:\\b.txt".into()]),
+            text: Some("C:\\a.txt\nC:\\b.txt".into()),
+            ..Default::default()
+        };
+        let (contents, suppress) = prepare_clipboard_write(&payload).unwrap();
+        assert_eq!(contents.len(), 2);
+        assert!(matches!(&contents[0], ClipboardContent::Files(_)));
+        assert_eq!(suppress, hash_kind("files", "C:\\a.txt\nC:\\b.txt".as_bytes()));
+    }
+
+    #[test]
+    fn prepare_clipboard_write_empty_errors() {
+        let payload = ResendPayload {
+            kind: "text".into(),
+            ..Default::default()
+        };
+        assert!(prepare_clipboard_write(&payload).is_err());
+    }
 
     #[test]
     fn compile_patterns_valid() {
@@ -993,84 +1096,86 @@ fn start_history_capture(
                 })
             };
 
-            if matches!(clipboard.has_files(), Ok(true)) {
-                if let Ok(files) = clipboard.read_files() {
-                    let files: Vec<String> = files.into_iter().filter(|f| !f.is_empty()).collect();
-                    if !files.is_empty() {
-                        let joined = files.join("\n");
-                        if !is_new(hash_kind("files", joined.as_bytes())) {
-                            return;
-                        }
-                        let matched = match_pattern(&joined);
-                        if let Ok(mut hist) = history_coord.lock() {
-                            let _ = hist.insert_files(files, matched);
-                        }
-                        history::notify_changed(&app_handle);
-                        return;
-                    }
-                }
+            let files: Option<Vec<String>> = if matches!(clipboard.has_files(), Ok(true)) {
+                clipboard
+                    .read_files()
+                    .ok()
+                    .map(|f| f.into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>())
+                    .filter(|f| !f.is_empty())
+            } else {
+                None
+            };
+            let image_bytes: Option<Vec<u8>> = if matches!(clipboard.has_image(), Ok(true)) {
+                clipboard.read_image_binary().ok().filter(|b| !b.is_empty())
+            } else {
+                None
+            };
+            let html: Option<String> = if matches!(clipboard.has_html(), Ok(true)) {
+                clipboard.read_html().ok().filter(|h| !h.trim().is_empty())
+            } else {
+                None
+            };
+            let rtf: Option<String> = if matches!(clipboard.has_rtf(), Ok(true)) {
+                clipboard.read_rtf().ok().filter(|r| !r.trim().is_empty())
+            } else {
+                None
+            };
+            let text: Option<String> = if matches!(clipboard.has_text(), Ok(true)) {
+                clipboard.read_text().ok().filter(|t| !t.is_empty())
+            } else {
+                None
+            };
+
+            let primary_hash = if let Some(f) = &files {
+                hash_kind("files", f.join("\n").as_bytes())
+            } else if let Some(b) = &image_bytes {
+                hash_image(b)
+            } else if let Some(h) = &html {
+                hash_kind("html", h.as_bytes())
+            } else if let Some(r) = &rtf {
+                hash_kind("rtf", r.as_bytes())
+            } else if let Some(t) = &text {
+                hash_text(t)
+            } else {
+                return;
+            };
+            if !is_new(primary_hash) {
+                return;
             }
-            if matches!(clipboard.has_image(), Ok(true)) {
-                if let Ok(bytes) = clipboard.read_image_binary() {
-                    if bytes.is_empty() {
-                        return;
+
+            let matched = if let Some(f) = &files {
+                match_pattern(&f.join("\n"))
+            } else if image_bytes.is_some() {
+                None
+            } else if let Some(h) = &html {
+                match_pattern(h)
+            } else if let Some(r) = &rtf {
+                match_pattern(r)
+            } else if let Some(t) = &text {
+                match_pattern(t)
+            } else {
+                None
+            };
+
+            let captured = history::CapturedContent {
+                files,
+                image: image_bytes.map(|bytes| {
+                    let (w, h) = parse_png_dimensions(&bytes).unwrap_or((0, 0));
+                    history::CapturedImage {
+                        mime: "image/png".into(),
+                        width: w,
+                        height: h,
+                        bytes,
                     }
-                    if !is_new(hash_image(&bytes)) {
-                        return;
-                    }
-                    let (w, ht) = parse_png_dimensions(&bytes).unwrap_or((0, 0));
-                    if let Ok(mut hist) = history_coord.lock() {
-                        let _ = hist.insert_image("image/png".into(), w, ht, bytes, None);
-                    }
-                    history::notify_changed(&app_handle);
-                    return;
-                }
+                }),
+                html,
+                rtf,
+                text,
+            };
+            if let Ok(mut hist) = history_coord.lock() {
+                let _ = hist.insert_captured(captured, matched);
             }
-            if matches!(clipboard.has_html(), Ok(true)) {
-                if let Ok(html) = clipboard.read_html() {
-                    if !html.trim().is_empty() {
-                        if !is_new(hash_kind("html", html.as_bytes())) {
-                            return;
-                        }
-                        let matched = match_pattern(&html);
-                        if let Ok(mut hist) = history_coord.lock() {
-                            let _ = hist.insert_html(html, matched);
-                        }
-                        history::notify_changed(&app_handle);
-                        return;
-                    }
-                }
-            }
-            if matches!(clipboard.has_rtf(), Ok(true)) {
-                if let Ok(rtf) = clipboard.read_rtf() {
-                    if !rtf.trim().is_empty() {
-                        if !is_new(hash_kind("rtf", rtf.as_bytes())) {
-                            return;
-                        }
-                        let matched = match_pattern(&rtf);
-                        if let Ok(mut hist) = history_coord.lock() {
-                            let _ = hist.insert_rtf(rtf, matched);
-                        }
-                        history::notify_changed(&app_handle);
-                        return;
-                    }
-                }
-            }
-            if matches!(clipboard.has_text(), Ok(true)) {
-                if let Ok(text) = clipboard.read_text() {
-                    if text.is_empty() {
-                        return;
-                    }
-                    if !is_new(hash_text(&text)) {
-                        return;
-                    }
-                    let matched = match_pattern(&text);
-                    if let Ok(mut hist) = history_coord.lock() {
-                        let _ = hist.insert_text(text, matched);
-                    }
-                    history::notify_changed(&app_handle);
-                }
-            }
+            history::notify_changed(&app_handle);
         },
     );
 }
@@ -1105,8 +1210,7 @@ fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<V
                             "Clipboard pattern matched — showing window".into(),
                         );
                         if let Some(window) = app_handle.get_webview_window("main") {
-                            window.show().unwrap();
-                            window.set_focus().unwrap();
+                            show_window_fresh(&window);
                         }
                         break;
                     }

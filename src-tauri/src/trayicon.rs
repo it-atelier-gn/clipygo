@@ -47,8 +47,7 @@ pub fn setup(app: &mut tauri::App) {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => {
                 if let Some(window) = app.get_webview_window("main") {
-                    window.show().unwrap();
-                    window.set_focus().unwrap();
+                    crate::show_window_fresh(&window);
                 }
             }
             "settings" => {
