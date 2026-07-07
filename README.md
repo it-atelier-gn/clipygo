@@ -9,7 +9,7 @@ Clipboard monitor that watches for specific content patterns and lets you route 
 
 It sits in your system tray, monitors the clipboard for regex matches (meeting links, Code With Me sessions, etc.), and pops up a compact window where you pick a target and hit Enter. Plugins handle the actual delivery.
 
-**History** stores plain text, rich text (HTML/RTF), images (PNG), and copied files. You can filter, search, pin, and re-copy or re-send any item. Default hotkey: Ctrl+Shift+H.
+**History** stores plain text, rich text (HTML/RTF), images (PNG), and copied files. When a copy carries several representations at once (e.g. text + HTML + RTF from Word or a browser), all of them are captured together and restored together, so re-copying an item pastes formatted where formatting is supported and as plain text elsewhere. You can filter, search, pin, and re-copy or re-send any item. Default hotkey: Ctrl+Shift+H.
 
 **Morph** rewrites clipboard text using rules or an on‑demand picker (Default hotkey: Ctrl+Shift+M). Built‑in transforms include URL tracking removal, JSON/XML formatting, Base64/URL encoding, case changes, slugify, accent/quote normalization, and line tools. Custom rules can be created and tested in Settings.
 

@@ -29,13 +29,53 @@ pub struct HistoryEntryView {
     pub matched_pattern: Option<String>,
     pub pinned: bool,
     pub last_sent_to: Option<String>,
+    pub formats: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EntryContent {
-    pub kind: String,
+#[derive(Debug, Clone)]
+pub struct CapturedImage {
+    pub mime: String,
+    pub width: u32,
+    pub height: u32,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CapturedContent {
+    pub files: Option<Vec<String>>,
+    pub image: Option<CapturedImage>,
+    pub html: Option<String>,
+    pub rtf: Option<String>,
     pub text: Option<String>,
+}
+
+impl CapturedContent {
+    pub fn primary_kind(&self) -> Option<&'static str> {
+        if self.files.is_some() {
+            Some("files")
+        } else if self.image.is_some() {
+            Some("image")
+        } else if self.html.is_some() {
+            Some("html")
+        } else if self.rtf.is_some() {
+            Some("rtf")
+        } else if self.text.is_some() {
+            Some("text")
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FullEntry {
+    pub kind: String,
     pub mime: Option<String>,
+    pub text: Option<String>,
+    pub html: Option<String>,
+    pub rtf: Option<String>,
+    pub files: Option<Vec<String>>,
+    pub image: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,89 +163,67 @@ impl HistoryCoordinator {
         })
     }
 
+    #[cfg(test)]
     pub fn insert_text(
         &mut self,
         content: String,
         matched_pattern: Option<String>,
     ) -> Result<Uuid, String> {
-        let id = Uuid::new_v4();
-        let ts = now_ms();
-        let plain_bytes = content.as_bytes();
-        let size = plain_bytes.len() as u64;
-        let ciphertext = encrypt(&self.key, plain_bytes)?;
-        self.conn
-            .execute(
-                "INSERT INTO entries (id, timestamp, kind, content_ct, size_bytes, matched_pattern, pinned) \
-                 VALUES (?, ?, 'text', ?, ?, ?, 0)",
-                params![
-                    id.as_bytes().to_vec(),
-                    ts,
-                    ciphertext,
-                    size as i64,
-                    matched_pattern
-                ],
-            )
-            .map_err(|e| e.to_string())?;
-        self.evict_until_under_cap()?;
-        Ok(id)
+        self.insert_captured(
+            CapturedContent {
+                text: Some(content),
+                ..Default::default()
+            },
+            matched_pattern,
+        )
     }
 
-    fn insert_string_kind(
-        &mut self,
-        kind: &str,
-        mime: Option<&str>,
-        content: &str,
-        matched_pattern: Option<String>,
-    ) -> Result<Uuid, String> {
-        let id = Uuid::new_v4();
-        let ts = now_ms();
-        let plain_bytes = content.as_bytes();
-        let size = plain_bytes.len() as u64;
-        let ciphertext = encrypt(&self.key, plain_bytes)?;
-        self.conn
-            .execute(
-                "INSERT INTO entries (id, timestamp, kind, content_ct, mime, size_bytes, matched_pattern, pinned) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
-                params![
-                    id.as_bytes().to_vec(),
-                    ts,
-                    kind,
-                    ciphertext,
-                    mime,
-                    size as i64,
-                    matched_pattern
-                ],
-            )
-            .map_err(|e| e.to_string())?;
-        self.evict_until_under_cap()?;
-        Ok(id)
-    }
-
+    #[cfg(test)]
     pub fn insert_html(
         &mut self,
         html: String,
         matched_pattern: Option<String>,
     ) -> Result<Uuid, String> {
-        self.insert_string_kind("html", Some("text/html"), &html, matched_pattern)
+        self.insert_captured(
+            CapturedContent {
+                html: Some(html),
+                ..Default::default()
+            },
+            matched_pattern,
+        )
     }
 
+    #[cfg(test)]
     pub fn insert_rtf(
         &mut self,
         rtf: String,
         matched_pattern: Option<String>,
     ) -> Result<Uuid, String> {
-        self.insert_string_kind("rtf", Some("text/rtf"), &rtf, matched_pattern)
+        self.insert_captured(
+            CapturedContent {
+                rtf: Some(rtf),
+                ..Default::default()
+            },
+            matched_pattern,
+        )
     }
 
+    #[cfg(test)]
     pub fn insert_files(
         &mut self,
         files: Vec<String>,
         matched_pattern: Option<String>,
     ) -> Result<Uuid, String> {
-        let joined = files.join("\n");
-        self.insert_string_kind("files", None, &joined, matched_pattern)
+        self.insert_captured(
+            CapturedContent {
+                files: Some(files),
+                ..Default::default()
+            },
+            matched_pattern,
+        )
     }
 
+    #[cfg(test)]
     pub fn insert_image(
         &mut self,
         mime: String,
@@ -214,22 +232,117 @@ impl HistoryCoordinator {
         bytes: Vec<u8>,
         matched_pattern: Option<String>,
     ) -> Result<Uuid, String> {
+        self.insert_captured(
+            CapturedContent {
+                image: Some(CapturedImage {
+                    mime,
+                    width,
+                    height,
+                    bytes,
+                }),
+                ..Default::default()
+            },
+            matched_pattern,
+        )
+    }
+
+    pub fn insert_captured(
+        &mut self,
+        captured: CapturedContent,
+        matched_pattern: Option<String>,
+    ) -> Result<Uuid, String> {
+        let primary = captured
+            .primary_kind()
+            .ok_or_else(|| "empty capture".to_string())?;
         let id = Uuid::new_v4();
         let ts = now_ms();
-        let size = bytes.len() as u64;
-        let ciphertext = encrypt(&self.key, &bytes)?;
+        let key = self.key;
+
+        let files_joined = captured.files.as_ref().map(|f| f.join("\n"));
+        let primary_content: Option<&str> = match primary {
+            "files" => files_joined.as_deref(),
+            "html" => captured.html.as_deref(),
+            "rtf" => captured.rtf.as_deref(),
+            "text" => captured.text.as_deref(),
+            _ => None,
+        };
+        let mime: Option<&str> = match primary {
+            "image" => captured.image.as_ref().map(|i| i.mime.as_str()),
+            "html" => Some("text/html"),
+            "rtf" => Some("text/rtf"),
+            _ => None,
+        };
+        let (width, height) = captured
+            .image
+            .as_ref()
+            .map(|i| (Some(i.width), Some(i.height)))
+            .unwrap_or((None, None));
+
+        let mut secondaries: Vec<(&'static str, &str)> = Vec::new();
+        for (fmt, content) in [
+            ("text", captured.text.as_deref()),
+            ("html", captured.html.as_deref()),
+            ("rtf", captured.rtf.as_deref()),
+        ] {
+            if fmt != primary {
+                if let Some(c) = content {
+                    secondaries.push((fmt, c));
+                }
+            }
+        }
+
+        let mut size: u64 = primary_content.map(|c| c.len() as u64).unwrap_or(0);
+        size += captured
+            .image
+            .as_ref()
+            .map(|i| i.bytes.len() as u64)
+            .unwrap_or(0);
+        size += secondaries.iter().map(|(_, c)| c.len() as u64).sum::<u64>();
+
+        let content_ct = match primary_content {
+            Some(c) => Some(encrypt(&key, c.as_bytes())?),
+            None => None,
+        };
+        let image_ct = match captured.image.as_ref() {
+            Some(i) => Some(encrypt(&key, &i.bytes)?),
+            None => None,
+        };
+        let mut secondary_cts: Vec<(&'static str, Vec<u8>)> = Vec::new();
+        for (fmt, c) in &secondaries {
+            secondary_cts.push((fmt, encrypt(&key, c.as_bytes())?));
+        }
+
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
         tx.execute(
-            "INSERT INTO entries (id, timestamp, kind, mime, width, height, size_bytes, matched_pattern, pinned) \
-             VALUES (?, ?, 'image', ?, ?, ?, ?, ?, 0)",
-            params![id.as_bytes().to_vec(), ts, mime, width, height, size as i64, matched_pattern],
+            "INSERT INTO entries (id, timestamp, kind, content_ct, mime, width, height, size_bytes, matched_pattern, pinned) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+            params![
+                id.as_bytes().to_vec(),
+                ts,
+                primary,
+                content_ct,
+                mime,
+                width,
+                height,
+                size as i64,
+                matched_pattern
+            ],
         )
         .map_err(|e| e.to_string())?;
-        tx.execute(
-            "INSERT INTO images (id, bytes_ct) VALUES (?, ?)",
-            params![id.as_bytes().to_vec(), ciphertext],
-        )
-        .map_err(|e| e.to_string())?;
+        if let Some(ct) = image_ct {
+            tx.execute(
+                "INSERT INTO images (id, bytes_ct) VALUES (?, ?)",
+                params![id.as_bytes().to_vec(), ct],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        for (fmt, ct) in secondary_cts {
+            tx.execute(
+                "INSERT INTO formats (entry_id, format, content_ct) VALUES (?, ?, ?)",
+                params![id.as_bytes().to_vec(), fmt, ct],
+            )
+            .map_err(|e| e.to_string())?;
+        }
         tx.commit().map_err(|e| e.to_string())?;
         self.evict_until_under_cap()?;
         Ok(id)
@@ -242,7 +355,9 @@ impl HistoryCoordinator {
         limit: u32,
     ) -> Result<Vec<HistoryEntryView>, String> {
         let mut sql = String::from(
-            "SELECT id, timestamp, kind, content_ct, mime, width, height, size_bytes, matched_pattern, pinned, last_sent_to \
+            "SELECT id, timestamp, kind, content_ct, mime, width, height, size_bytes, matched_pattern, pinned, last_sent_to, \
+             (SELECT GROUP_CONCAT(format) FROM formats WHERE entry_id = entries.id), \
+             EXISTS(SELECT 1 FROM images WHERE id = entries.id) \
              FROM entries WHERE 1=1",
         );
         match filter.kind {
@@ -272,6 +387,8 @@ impl HistoryCoordinator {
                 let matched_pattern: Option<String> = r.get(8)?;
                 let pinned: i64 = r.get(9)?;
                 let last_sent_to: Option<String> = r.get(10)?;
+                let secondary_formats: Option<String> = r.get(11)?;
+                let has_image: i64 = r.get(12)?;
                 Ok((
                     id,
                     r.get::<_, i64>(1)?,
@@ -284,6 +401,8 @@ impl HistoryCoordinator {
                     matched_pattern,
                     pinned,
                     last_sent_to,
+                    secondary_formats,
+                    has_image,
                 ))
             })
             .map_err(|e| e.to_string())?;
@@ -304,6 +423,8 @@ impl HistoryCoordinator {
                 matched_pattern,
                 pinned,
                 last_sent_to,
+                secondary_formats,
+                has_image,
             ) = row.map_err(|e| e.to_string())?;
 
             let mut preview = String::new();
@@ -347,6 +468,17 @@ impl HistoryCoordinator {
                 skipped += 1;
                 continue;
             }
+            let mut formats: Vec<String> = Vec::new();
+            for f in ["files", "image", "html", "rtf", "text"] {
+                let stored = kind == f
+                    || (f == "image" && has_image != 0)
+                    || secondary_formats
+                        .as_deref()
+                        .is_some_and(|s| s.split(',').any(|x| x == f));
+                if stored {
+                    formats.push(f.to_string());
+                }
+            }
             views.push(HistoryEntryView {
                 id,
                 timestamp,
@@ -360,6 +492,7 @@ impl HistoryCoordinator {
                 matched_pattern,
                 pinned: pinned != 0,
                 last_sent_to,
+                formats,
             });
             if views.len() as u32 >= limit {
                 break;
@@ -380,7 +513,7 @@ impl HistoryCoordinator {
         decrypt(&self.key, &ct)
     }
 
-    pub fn get_entry(&self, id: Uuid) -> Result<Option<EntryContent>, String> {
+    pub fn get_full_entry(&self, id: Uuid) -> Result<Option<FullEntry>, String> {
         let row = self
             .conn
             .query_row(
@@ -400,14 +533,62 @@ impl HistoryCoordinator {
             None => return Ok(None),
             Some(v) => v,
         };
-        let text = match ct {
-            Some(c) => {
-                let plain = decrypt(&self.key, &c)?;
-                Some(String::from_utf8(plain).map_err(|e| e.to_string())?)
-            }
-            None => None,
+        let mut full = FullEntry {
+            kind: kind.clone(),
+            mime,
+            ..Default::default()
         };
-        Ok(Some(EntryContent { kind, text, mime }))
+        if let Some(ct) = ct {
+            let plain = decrypt(&self.key, &ct)?;
+            let content = String::from_utf8(plain).map_err(|e| e.to_string())?;
+            match kind.as_str() {
+                "html" => full.html = Some(content),
+                "rtf" => full.rtf = Some(content),
+                "files" => {
+                    full.files = Some(
+                        content
+                            .lines()
+                            .filter(|l| !l.is_empty())
+                            .map(|l| l.to_string())
+                            .collect(),
+                    )
+                }
+                _ => full.text = Some(content),
+            }
+        }
+        let mut stmt = self
+            .conn
+            .prepare("SELECT format, content_ct FROM formats WHERE entry_id = ?")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![id.as_bytes().to_vec()], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (fmt, ct) = row.map_err(|e| e.to_string())?;
+            let plain = decrypt(&self.key, &ct)?;
+            let content = String::from_utf8(plain).map_err(|e| e.to_string())?;
+            match fmt.as_str() {
+                "text" => full.text = Some(content),
+                "html" => full.html = Some(content),
+                "rtf" => full.rtf = Some(content),
+                _ => {}
+            }
+        }
+        let image_ct: Option<Vec<u8>> = self
+            .conn
+            .query_row(
+                "SELECT bytes_ct FROM images WHERE id = ?",
+                params![id.as_bytes().to_vec()],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if let Some(ct) = image_ct {
+            full.image = Some(decrypt(&self.key, &ct)?);
+        }
+        Ok(Some(full))
     }
 
     pub fn set_pinned(&self, id: Uuid, pinned: bool) -> Result<(), String> {
@@ -502,6 +683,12 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
              id BLOB PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
              bytes_ct BLOB NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS formats (
+             entry_id BLOB NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
+             format TEXT NOT NULL,
+             content_ct BLOB NOT NULL,
+             PRIMARY KEY (entry_id, format)
+         );
          CREATE INDEX IF NOT EXISTS idx_entries_ts ON entries(timestamp);
          CREATE INDEX IF NOT EXISTS idx_entries_pinned ON entries(pinned);",
     )
@@ -588,6 +775,10 @@ fn file_name_of(path: &str) -> String {
 
 pub fn html_to_text(s: &str) -> String {
     strip_html(s)
+}
+
+pub fn rtf_to_text(s: &str) -> String {
+    strip_rtf(s)
 }
 
 fn strip_html(s: &str) -> String {
@@ -798,10 +989,10 @@ mod tests {
     }
 
     #[test]
-    fn get_entry_roundtrip() {
+    fn get_full_entry_roundtrip() {
         let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
         let id = h.insert_text("payload".to_string(), None).unwrap();
-        let entry = h.get_entry(id).unwrap().unwrap();
+        let entry = h.get_full_entry(id).unwrap().unwrap();
         assert_eq!(entry.kind, "text");
         assert_eq!(entry.text.as_deref(), Some("payload"));
     }
@@ -918,10 +1109,10 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].kind_tag, "html");
         assert_eq!(list[0].preview, "Title Body text");
-        let entry = h.get_entry(id).unwrap().unwrap();
+        let entry = h.get_full_entry(id).unwrap().unwrap();
         assert_eq!(entry.kind, "html");
         assert_eq!(
-            entry.text.as_deref(),
+            entry.html.as_deref(),
             Some("<h1>Title</h1><p>Body text</p>")
         );
     }
@@ -988,6 +1179,175 @@ mod tests {
             .unwrap();
         assert_eq!(file_search.len(), 1);
         assert_eq!(file_search[0].kind_tag, "files");
+    }
+
+    #[test]
+    fn legacy_db_without_formats_table_upgrades_and_reads() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             CREATE TABLE entries (
+                 id BLOB PRIMARY KEY,
+                 timestamp INTEGER NOT NULL,
+                 kind TEXT NOT NULL,
+                 content_ct BLOB,
+                 mime TEXT,
+                 width INTEGER,
+                 height INTEGER,
+                 size_bytes INTEGER NOT NULL,
+                 matched_pattern TEXT,
+                 pinned INTEGER NOT NULL DEFAULT 0,
+                 last_sent_to TEXT
+             );
+             CREATE TABLE images (
+                 id BLOB PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+                 bytes_ct BLOB NOT NULL
+             );",
+        )
+        .unwrap();
+        let key = random_key();
+        let id = Uuid::new_v4();
+        let html = "<b>legacy</b>";
+        let ct = encrypt(&key, html.as_bytes()).unwrap();
+        conn.execute(
+            "INSERT INTO entries (id, timestamp, kind, content_ct, mime, size_bytes, pinned) \
+             VALUES (?, ?, 'html', ?, 'text/html', ?, 0)",
+            params![id.as_bytes().to_vec(), 1i64, ct, html.len() as i64],
+        )
+        .unwrap();
+
+        init_schema(&conn).unwrap();
+        let h = HistoryCoordinator {
+            conn,
+            persisted: false,
+            cap_bytes: 1024 * 1024,
+            key,
+        };
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].kind_tag, "html");
+        assert_eq!(list[0].preview, "legacy");
+        let full = h.get_full_entry(id).unwrap().unwrap();
+        assert_eq!(full.html.as_deref(), Some(html));
+        assert!(full.text.is_none());
+    }
+
+    #[test]
+    fn insert_captured_stores_all_formats() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        let id = h
+            .insert_captured(
+                CapturedContent {
+                    html: Some("<b>hi</b>".into()),
+                    rtf: Some(r"{\rtf1 hi}".into()),
+                    text: Some("hi".into()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].kind_tag, "html");
+        assert_eq!(list[0].formats, vec!["html", "rtf", "text"]);
+        let full = h.get_full_entry(id).unwrap().unwrap();
+        assert_eq!(full.kind, "html");
+        assert_eq!(full.html.as_deref(), Some("<b>hi</b>"));
+        assert_eq!(full.rtf.as_deref(), Some(r"{\rtf1 hi}"));
+        assert_eq!(full.text.as_deref(), Some("hi"));
+        let expected = ("<b>hi</b>".len() + r"{\rtf1 hi}".len() + "hi".len()) as u64;
+        assert_eq!(h.stats().unwrap().bytes_used, expected);
+    }
+
+    #[test]
+    fn insert_captured_image_with_secondary_formats() {
+        let mut h = HistoryCoordinator::new_in_memory(10 * 1024 * 1024).unwrap();
+        let bytes = vec![1u8, 2, 3, 4];
+        let id = h
+            .insert_captured(
+                CapturedContent {
+                    image: Some(CapturedImage {
+                        mime: "image/png".into(),
+                        width: 8,
+                        height: 4,
+                        bytes: bytes.clone(),
+                    }),
+                    html: Some("<img src=\"x\">".into()),
+                    text: Some("x".into()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list[0].kind_tag, "image");
+        assert_eq!(list[0].width, Some(8));
+        assert_eq!(list[0].formats, vec!["image", "html", "text"]);
+        let full = h.get_full_entry(id).unwrap().unwrap();
+        assert_eq!(full.kind, "image");
+        assert_eq!(full.image.as_deref(), Some(bytes.as_slice()));
+        assert_eq!(full.html.as_deref(), Some("<img src=\"x\">"));
+        assert_eq!(full.text.as_deref(), Some("x"));
+        assert_eq!(h.get_image(id).unwrap(), bytes);
+    }
+
+    #[test]
+    fn get_full_entry_single_format_has_no_extras() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        let id = h.insert_text("plain".into(), None).unwrap();
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list[0].formats, vec!["text"]);
+        let full = h.get_full_entry(id).unwrap().unwrap();
+        assert_eq!(full.kind, "text");
+        assert_eq!(full.text.as_deref(), Some("plain"));
+        assert!(full.html.is_none());
+        assert!(full.rtf.is_none());
+        assert!(full.image.is_none());
+        assert!(full.files.is_none());
+    }
+
+    #[test]
+    fn get_full_entry_files_split_lines() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        let id = h
+            .insert_captured(
+                CapturedContent {
+                    files: Some(vec!["C:\\a.txt".into(), "C:\\b.txt".into()]),
+                    text: Some("C:\\a.txt".into()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        let full = h.get_full_entry(id).unwrap().unwrap();
+        assert_eq!(full.kind, "files");
+        assert_eq!(
+            full.files,
+            Some(vec!["C:\\a.txt".to_string(), "C:\\b.txt".to_string()])
+        );
+        assert_eq!(full.text.as_deref(), Some("C:\\a.txt"));
+    }
+
+    #[test]
+    fn delete_removes_secondary_formats() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        let id = h
+            .insert_captured(
+                CapturedContent {
+                    html: Some("<b>x</b>".into()),
+                    text: Some("x".into()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        h.delete(id).unwrap();
+        assert!(h.get_full_entry(id).unwrap().is_none());
+        let orphans: i64 = h
+            .conn
+            .query_row("SELECT COUNT(*) FROM formats", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(orphans, 0);
     }
 
     #[test]

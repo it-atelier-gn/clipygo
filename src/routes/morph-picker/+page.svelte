@@ -138,7 +138,6 @@
       e.preventDefault();
       if (changed) apply();
     } else if (document.activeElement !== searchEl && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      // Route typing into the filter box even if it lost focus (e.g. window reshown).
       if (e.key.length === 1) {
         e.preventDefault();
         query += e.key;
@@ -156,20 +155,25 @@
   async function onShow() {
     query = '';
     highlightIndex = 0;
+    errorMsg = '';
+    applied = false;
     await loadClipboard();
     await tick();
     searchEl?.focus();
   }
 
   let unlistenFocus: (() => void) | undefined;
+  let unlistenShown: (() => void) | undefined;
 
   onMount(() => {
     if (!browser) return;
-    getCurrentWebviewWindow()
+    const win = getCurrentWebviewWindow();
+    win
       .onFocusChanged(({ payload: focused }) => {
-        if (focused) onShow();
+        if (focused) searchEl?.focus();
       })
       .then((fn) => (unlistenFocus = fn));
+    win.listen('window-shown', () => onShow()).then((fn) => (unlistenShown = fn));
     onShow();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -177,6 +181,7 @@
 
   onDestroy(() => {
     if (unlistenFocus) unlistenFocus();
+    if (unlistenShown) unlistenShown();
   });
 </script>
 

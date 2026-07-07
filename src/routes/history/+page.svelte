@@ -2,15 +2,8 @@
   import { onDestroy, onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { invoke } from '@tauri-apps/api/core';
-  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow';
-  import {
-    writeText,
-    writeImageBase64,
-    writeHtmlAndText,
-    writeRtf,
-    writeFiles,
-  } from 'tauri-plugin-clipboard-api';
 
   type KindTag = 'text' | 'image' | 'html' | 'rtf' | 'files';
 
@@ -27,6 +20,7 @@
     matched_pattern?: string;
     pinned: boolean;
     last_sent_to?: string;
+    formats: string[];
   }
 
   interface Stats {
@@ -47,11 +41,24 @@
   let thumbnails: Record<string, string> = {};
   let unlistenChanged: UnlistenFn | null = null;
   let unlistenFocus: UnlistenFn | null = null;
+  let unlistenShown: UnlistenFn | null = null;
   let resendingId: string | null = null;
   let errorMsg = '';
   let selectedIndex = 0;
   let searchInput: HTMLInputElement | null = null;
   let rowEls: Record<string, HTMLDivElement> = {};
+  let listEl: HTMLDivElement | null = null;
+
+  async function resetWindowState() {
+    query = '';
+    filterKind = 'all';
+    pinnedOnly = false;
+    selectedIndex = 0;
+    errorMsg = '';
+    await refresh();
+    listEl?.scrollTo(0, 0);
+    searchInput?.focus();
+  }
 
   async function refresh() {
     try {
@@ -110,22 +117,7 @@
   }
 
   async function writePayloadToClipboard(payload: ResendPayload) {
-    if (payload.kind === 'text' && payload.text != null) {
-      await invoke('history_suppress_next_text', { text: payload.text });
-      await writeText(payload.text);
-    } else if (payload.kind === 'html' && payload.html != null) {
-      await invoke('history_suppress_next_html', { html: payload.html });
-      await writeHtmlAndText(payload.html, payload.text ?? '');
-    } else if (payload.kind === 'rtf' && payload.rtf != null) {
-      await invoke('history_suppress_next_rtf', { rtf: payload.rtf });
-      await writeRtf(payload.rtf);
-    } else if (payload.kind === 'files' && payload.files?.length) {
-      await invoke('history_suppress_next_files', { files: payload.files });
-      await writeFiles(payload.files);
-    } else if (payload.kind === 'image' && payload.image_base64) {
-      await invoke('history_suppress_next_image_b64', { imageBase64: payload.image_base64 });
-      await writeImageBase64(payload.image_base64);
-    }
+    await invoke('clipboard_write_payload', { payload });
   }
 
   async function copyToClipboard(e: HistoryEntryView) {
@@ -144,6 +136,9 @@
       await writePayloadToClipboard(payload);
       const main = await WebviewWindow.getByLabel('main');
       if (main) {
+        if (!(await main.isVisible())) {
+          await emitTo('main', 'window-shown');
+        }
         await main.show();
         await main.setFocus();
       }
@@ -163,15 +158,6 @@
       stats = await invoke<Stats>('history_stats');
     } catch (err) {
       errorMsg = `Clear failed: ${err}`;
-    }
-  }
-
-  function kindLabel(kind: KindTag): string {
-    switch (kind) {
-      case 'html': return 'rich · html';
-      case 'rtf': return 'rich · rtf';
-      case 'files': return 'files';
-      default: return kind;
     }
   }
 
@@ -304,11 +290,15 @@
     unlistenFocus = await win.onFocusChanged(({ payload: focused }) => {
       if (focused) searchInput?.focus();
     });
+    unlistenShown = await win.listen('window-shown', () => {
+      resetWindowState();
+    });
   });
 
   onDestroy(() => {
     if (unlistenChanged) unlistenChanged();
     if (unlistenFocus) unlistenFocus();
+    if (unlistenShown) unlistenShown();
   });
 </script>
 
@@ -352,7 +342,7 @@
     <div class="error-banner">{errorMsg} <button class="btn-strip" on:click={() => (errorMsg = '')}>✕</button></div>
   {/if}
 
-  <div class="history-list">
+  <div class="history-list" bind:this={listEl}>
     {#if entries.length === 0}
       <div class="empty-state">No history entries</div>
     {:else}
@@ -383,9 +373,9 @@
             <div class="row-meta">
               <span class="row-time">{formatTime(e.timestamp)}</span>
               <span class="row-size">{formatBytes(e.size_bytes)}</span>
-              {#if e.kind_tag !== 'text' && e.kind_tag !== 'image'}
-                <span class="chip chip-kind">{kindLabel(e.kind_tag)}</span>
-              {/if}
+              {#each e.formats as f}
+                <span class="chip chip-kind">{f}</span>
+              {/each}
               {#if e.kind_tag === 'files' && e.line_count > 0}
                 <span class="chip">{e.line_count} {e.line_count === 1 ? 'file' : 'files'}</span>
               {:else if e.line_count > 1}
