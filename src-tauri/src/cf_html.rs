@@ -4,7 +4,11 @@ const WRAP_SUFFIX: &str = "<!--EndFragment-->\r\n</body>\r\n</html>";
 
 fn is_full_document(fragment: &str) -> bool {
     let trimmed = fragment.trim_start();
-    let head: String = trimmed.chars().take(9).collect::<String>().to_ascii_lowercase();
+    let head: String = trimmed
+        .chars()
+        .take(9)
+        .collect::<String>()
+        .to_ascii_lowercase();
     head.starts_with("<html") || head.starts_with("<!doctype")
 }
 
@@ -69,9 +73,13 @@ mod tests {
 
     #[test]
     fn doctype_and_case_insensitive_html_detected() {
-        assert!(is_full_document("<!DOCTYPE html><html><body>x</body></html>"));
+        assert!(is_full_document(
+            "<!DOCTYPE html><html><body>x</body></html>"
+        ));
         assert!(is_full_document("<HTML><body>x</body></HTML>"));
-        assert!(is_full_document("  <html lang=\"de\"><body>x</body></html>"));
+        assert!(is_full_document(
+            "  <html lang=\"de\"><body>x</body></html>"
+        ));
         assert!(!is_full_document("<p>x</p>"));
     }
 

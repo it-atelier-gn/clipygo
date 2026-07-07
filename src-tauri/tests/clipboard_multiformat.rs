@@ -96,7 +96,8 @@ fn existing_db_opens_with_new_schema() {
         Ok(p) => p,
         Err(_) => return,
     };
-    let coord = HistoryCoordinator::new_persisted(path.into(), [0u8; 32], 64 * 1024 * 1024).unwrap();
+    let coord =
+        HistoryCoordinator::new_persisted(path.into(), [0u8; 32], 64 * 1024 * 1024).unwrap();
     let list = coord.list(&Filter::default(), 0, 50).unwrap();
     let stats = coord.stats().unwrap();
     println!("entries listed: {}, items: {}", list.len(), stats.items);
