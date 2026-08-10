@@ -30,7 +30,7 @@ regex = "1.11.1"
 tmuntaner-keyring = "0.1.0-alpha.15"
 async-trait = "0.1"
 uuid = { version = "1.23", features = ["v4", "serde"] }
-base64 = "0.22"
+base64 = "0.23"
 reqwest = { version = "0.13", default-features = false, features = ["native-tls", "json"] }
 sha2 = "0.11"
 rusqlite = { version = "0.40", features = ["bundled"] }
