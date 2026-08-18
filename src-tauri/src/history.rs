@@ -357,7 +357,8 @@ impl HistoryCoordinator {
         let mut sql = String::from(
             "SELECT id, timestamp, kind, content_ct, mime, width, height, size_bytes, matched_pattern, pinned, last_sent_to, \
              (SELECT GROUP_CONCAT(format) FROM formats WHERE entry_id = entries.id), \
-             EXISTS(SELECT 1 FROM images WHERE id = entries.id) \
+             EXISTS(SELECT 1 FROM images WHERE id = entries.id), \
+             (SELECT content_ct FROM formats WHERE entry_id = entries.id AND format = 'text') \
              FROM entries WHERE 1=1",
         );
         match filter.kind {
@@ -389,6 +390,7 @@ impl HistoryCoordinator {
                 let last_sent_to: Option<String> = r.get(10)?;
                 let secondary_formats: Option<String> = r.get(11)?;
                 let has_image: i64 = r.get(12)?;
+                let text_ct: Option<Vec<u8>> = r.get(13)?;
                 Ok((
                     id,
                     r.get::<_, i64>(1)?,
@@ -403,6 +405,7 @@ impl HistoryCoordinator {
                     last_sent_to,
                     secondary_formats,
                     has_image,
+                    text_ct,
                 ))
             })
             .map_err(|e| e.to_string())?;
@@ -425,6 +428,7 @@ impl HistoryCoordinator {
                 last_sent_to,
                 secondary_formats,
                 has_image,
+                text_ct,
             ) = row.map_err(|e| e.to_string())?;
 
             let mut preview = String::new();
@@ -434,11 +438,14 @@ impl HistoryCoordinator {
                 if let Some(ct) = &content_ct {
                     if let Ok(plain) = decrypt(&self.key, ct) {
                         if let Ok(s) = String::from_utf8(plain) {
-                            let searchable = match kind.as_str() {
+                            let captured_text = text_ct
+                                .and_then(|ct| decrypt(&self.key, &ct).ok())
+                                .and_then(|plain| String::from_utf8(plain).ok());
+                            let searchable = captured_text.unwrap_or_else(|| match kind.as_str() {
                                 "html" => strip_html(&s),
                                 "rtf" => strip_rtf(&s),
                                 _ => s.clone(),
-                            };
+                            });
                             if kind == "files" {
                                 let (p, n) = files_preview(&s);
                                 preview = p;
@@ -795,13 +802,7 @@ fn strip_html(s: &str) -> String {
             _ => {}
         }
     }
-    let decoded = out
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'");
+    let decoded = html_escape::decode_html_entities(&out);
     decoded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -1091,6 +1092,54 @@ mod tests {
     fn strip_html_yields_plain_text() {
         let html = "<p>Hello <b>world</b> &amp; <i>friends</i></p>";
         assert_eq!(strip_html(html), "Hello world & friends");
+    }
+
+    #[test]
+    fn strip_html_decodes_numeric_entities() {
+        let html = "&#64;&#32;rem&#32;&#x43;opyright";
+        assert_eq!(strip_html(html), "@ rem Copyright");
+    }
+
+    #[test]
+    fn strip_html_decodes_named_entities_beyond_basic_set() {
+        let html = "<p>caf&eacute; &mdash; 50&nbsp;&euro; &hellip;</p>";
+        assert_eq!(strip_html(html), "café — 50 € …");
+    }
+
+    #[test]
+    fn insert_captured_html_preview_prefers_text_companion() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        h.insert_captured(
+            CapturedContent {
+                html: Some("&#64;&#32;rem&#32;Copyright&#32;2015".into()),
+                text: Some("@ rem Copyright 2015".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list[0].preview, "@ rem Copyright 2015");
+        let search = h
+            .list(
+                &Filter {
+                    query: "rem copyright".into(),
+                    ..Default::default()
+                },
+                0,
+                10,
+            )
+            .unwrap();
+        assert_eq!(search.len(), 1);
+    }
+
+    #[test]
+    fn html_without_text_companion_falls_back_to_stripped_preview() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        h.insert_html("<h1>Title</h1><p>Body &amp; more</p>".into(), None)
+            .unwrap();
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list[0].preview, "Title Body & more");
     }
 
     #[test]
