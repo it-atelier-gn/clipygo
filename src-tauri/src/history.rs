@@ -357,7 +357,8 @@ impl HistoryCoordinator {
         let mut sql = String::from(
             "SELECT id, timestamp, kind, content_ct, mime, width, height, size_bytes, matched_pattern, pinned, last_sent_to, \
              (SELECT GROUP_CONCAT(format) FROM formats WHERE entry_id = entries.id), \
-             EXISTS(SELECT 1 FROM images WHERE id = entries.id) \
+             EXISTS(SELECT 1 FROM images WHERE id = entries.id), \
+             (SELECT content_ct FROM formats WHERE entry_id = entries.id AND format = 'text') \
              FROM entries WHERE 1=1",
         );
         match filter.kind {
@@ -389,6 +390,7 @@ impl HistoryCoordinator {
                 let last_sent_to: Option<String> = r.get(10)?;
                 let secondary_formats: Option<String> = r.get(11)?;
                 let has_image: i64 = r.get(12)?;
+                let text_ct: Option<Vec<u8>> = r.get(13)?;
                 Ok((
                     id,
                     r.get::<_, i64>(1)?,
@@ -403,6 +405,7 @@ impl HistoryCoordinator {
                     last_sent_to,
                     secondary_formats,
                     has_image,
+                    text_ct,
                 ))
             })
             .map_err(|e| e.to_string())?;
@@ -425,6 +428,7 @@ impl HistoryCoordinator {
                 last_sent_to,
                 secondary_formats,
                 has_image,
+                text_ct,
             ) = row.map_err(|e| e.to_string())?;
 
             let mut preview = String::new();
@@ -444,7 +448,15 @@ impl HistoryCoordinator {
                                 preview = p;
                                 line_count = n;
                             } else {
-                                let (p, n) = build_preview(&searchable);
+                                let preview_source = if matches!(kind.as_str(), "html" | "rtf") {
+                                    text_ct
+                                        .and_then(|ct| decrypt(&self.key, &ct).ok())
+                                        .and_then(|plain| String::from_utf8(plain).ok())
+                                        .unwrap_or_else(|| searchable.clone())
+                                } else {
+                                    searchable.clone()
+                                };
+                                let (p, n) = build_preview(&preview_source);
                                 preview = p;
                                 line_count = n;
                             }
@@ -802,7 +814,41 @@ fn strip_html(s: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'");
+    let decoded = decode_numeric_entities(&decoded);
     decoded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn decode_numeric_entities(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < n {
+        if chars[i] == '&' && i + 1 < n && chars[i + 1] == '#' {
+            let hex = i + 2 < n && (chars[i + 2] == 'x' || chars[i + 2] == 'X');
+            let start = if hex { i + 3 } else { i + 2 };
+            let mut j = start;
+            while j < n && chars[j].is_ascii_hexdigit() && (hex || chars[j].is_ascii_digit()) {
+                j += 1;
+            }
+            if j > start && j < n && chars[j] == ';' {
+                let digits: String = chars[start..j].iter().collect();
+                let code = if hex {
+                    u32::from_str_radix(&digits, 16).ok()
+                } else {
+                    digits.parse::<u32>().ok()
+                };
+                if let Some(c) = code.and_then(char::from_u32) {
+                    out.push(c);
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
 }
 
 fn strip_rtf(s: &str) -> String {
@@ -1091,6 +1137,28 @@ mod tests {
     fn strip_html_yields_plain_text() {
         let html = "<p>Hello <b>world</b> &amp; <i>friends</i></p>";
         assert_eq!(strip_html(html), "Hello world & friends");
+    }
+
+    #[test]
+    fn strip_html_decodes_numeric_entities() {
+        let html = "&#64;&#32;rem&#32;&#x43;opyright";
+        assert_eq!(strip_html(html), "@ rem Copyright");
+    }
+
+    #[test]
+    fn insert_captured_html_preview_prefers_text_companion() {
+        let mut h = HistoryCoordinator::new_in_memory(1024 * 1024).unwrap();
+        h.insert_captured(
+            CapturedContent {
+                html: Some("&#64;&#32;rem&#32;Copyright&#32;2015".into()),
+                text: Some("@ rem Copyright 2015".into()),
+                ..Default::default()
+            },
+            None,
+        )
+        .unwrap();
+        let list = h.list(&Filter::default(), 0, 10).unwrap();
+        assert_eq!(list[0].preview, "@ rem Copyright 2015");
     }
 
     #[test]
