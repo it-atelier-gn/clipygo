@@ -498,11 +498,18 @@ fn parse_shortcut(app: &AppHandle, s: &str) -> Option<tauri_plugin_global_shortc
     }
 }
 
+fn is_shortcut_press(event: &tauri_plugin_global_shortcut::ShortcutEvent) -> bool {
+    event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed
+}
+
 pub fn on_main_shortcut(
     app: &AppHandle,
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
-    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+    event: tauri_plugin_global_shortcut::ShortcutEvent,
 ) {
+    if !is_shortcut_press(&event) {
+        return;
+    }
     debug_log(
         app,
         "app",
@@ -517,8 +524,11 @@ pub fn on_main_shortcut(
 pub fn on_history_shortcut(
     app: &AppHandle,
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
-    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+    event: tauri_plugin_global_shortcut::ShortcutEvent,
 ) {
+    if !is_shortcut_press(&event) {
+        return;
+    }
     debug_log(
         app,
         "app",
@@ -531,8 +541,11 @@ pub fn on_history_shortcut(
 pub fn on_morph_shortcut(
     app: &AppHandle,
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
-    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+    event: tauri_plugin_global_shortcut::ShortcutEvent,
 ) {
+    if !is_shortcut_press(&event) {
+        return;
+    }
     debug_log(
         app,
         "app",
@@ -545,8 +558,11 @@ pub fn on_morph_shortcut(
 pub fn on_exec_shortcut(
     app: &AppHandle,
     shortcut: &tauri_plugin_global_shortcut::Shortcut,
-    _event: tauri_plugin_global_shortcut::ShortcutEvent,
+    event: tauri_plugin_global_shortcut::ShortcutEvent,
 ) {
+    if !is_shortcut_press(&event) {
+        return;
+    }
     debug_log(
         app,
         "app",
@@ -556,9 +572,6 @@ pub fn on_exec_shortcut(
     handle_exec_shortcut(app);
 }
 
-/// Resolves the exec shortcut: if the feature is enabled and exactly one enabled
-/// command matches the current clipboard, it runs directly; otherwise the picker
-/// window is shown so the user can choose.
 fn handle_exec_shortcut(app: &AppHandle) {
     let settings = match SettingsCoordinator::from_handle(app) {
         Ok(s) => s.get_settings().clone(),
@@ -727,6 +740,19 @@ mod tests {
     use super::*;
     use clipboard_rs::ClipboardContent;
     use history_commands::ResendPayload;
+
+    fn shortcut_event(
+        state: tauri_plugin_global_shortcut::ShortcutState,
+    ) -> tauri_plugin_global_shortcut::ShortcutEvent {
+        tauri_plugin_global_shortcut::ShortcutEvent { id: 1, state }
+    }
+
+    #[test]
+    fn shortcut_handlers_act_on_press_only() {
+        use tauri_plugin_global_shortcut::ShortcutState;
+        assert!(is_shortcut_press(&shortcut_event(ShortcutState::Pressed)));
+        assert!(!is_shortcut_press(&shortcut_event(ShortcutState::Released)));
+    }
 
     #[test]
     fn prepare_clipboard_write_html_and_text() {
