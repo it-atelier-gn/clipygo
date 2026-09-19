@@ -135,6 +135,8 @@
       box-shadow: 0 30px 80px rgba(0,0,0,0.5), 0 0 40px rgba(0,212,255,0.06);
     }
     .demo-frame video { display: block; width: 100%; height: auto; }
+    .demo-credit { max-width: 1000px; margin: 0.75rem auto 0; font-size: 0.8rem; color: var(--text-muted); }
+    .demo-credit a { color: inherit; }
 
     section { padding: 6rem 2rem; }
     .container { max-width: 1100px; margin: 0 auto; }
@@ -323,8 +325,9 @@
 
 <section class="demo" aria-label="Demo video">
   <div class="demo-frame">
-    <video src="clipygo-demo.mp4" poster="clipygo-demo.jpg" controls muted playsinline preload="metadata" width="1920" height="1080"></video>
+    <video src="clipygo-demo.mp4" poster="clipygo-demo.jpg" controls playsinline preload="metadata" width="1920" height="1080"></video>
   </div>
+  <p class="demo-credit">Music: “Happy Beats / Business Moves Vol. 1” by <a href="https://ende.app/en" rel="noopener">ende.app</a>, <a href="https://creativecommons.org/licenses/by/4.0/" rel="noopener">CC BY 4.0</a>.</p>
 </section>
 
 <section id="features">
