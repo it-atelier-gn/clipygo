@@ -35,7 +35,6 @@
       line-height: 1.6;
     }
 
-    /* ── Nav ── */
     nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
       background: var(--bg-nav);
@@ -60,7 +59,6 @@
     }
     .nav-links a:hover { color: var(--text); }
 
-    /* ── Hero ── */
     .hero {
       min-height: 100vh;
       display: flex; align-items: center; justify-content: center;
@@ -127,7 +125,17 @@
     }
     .badge-img { height: 20px; }
 
-    /* ── Section base ── */
+    .demo { padding: 0 2rem 4rem; }
+    .demo-frame {
+      max-width: 1000px; margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--bg-card);
+      box-shadow: 0 30px 80px rgba(0,0,0,0.5), 0 0 40px rgba(0,212,255,0.06);
+    }
+    .demo-frame video { display: block; width: 100%; height: auto; }
+
     section { padding: 6rem 2rem; }
     .container { max-width: 1100px; margin: 0 auto; }
     .section-label {
@@ -145,7 +153,6 @@
       max-width: 540px; margin-bottom: 3rem;
     }
 
-    /* ── Features ── */
     .features-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -170,7 +177,6 @@
     }
     .feature-card p { font-size: 0.9rem; color: var(--text-muted); }
 
-    /* ── How it works ── */
     .how-bg { background: var(--bg-card); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
     .steps {
       display: grid;
@@ -185,14 +191,12 @@
       font-family: 'JetBrains Mono', monospace;
       line-height: 1;
       margin-bottom: 0.75rem;
-      /* visible accent */
       -webkit-text-stroke: 1px rgba(0,212,255,0.25);
       color: transparent;
     }
     .step h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
     .step p { font-size: 0.9rem; color: var(--text-muted); }
 
-    /* ── Plugin protocol ── */
     .protocol-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -223,7 +227,6 @@
     .key { color: #e2e8f0; }
     .cmt { color: #4a5568; }
 
-    /* ── Download ── */
     .download-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -249,7 +252,6 @@
     }
     .download-card .btn { align-self: flex-start; margin-top: auto; }
 
-    /* ── About strip ── */
     .about-strip {
       border-top: 1px solid var(--border-red);
       background: var(--red-dim);
@@ -265,7 +267,6 @@
     .about-inner p a:hover { text-decoration: underline; }
     .about-links { display: flex; gap: 1rem; flex-shrink: 0; }
 
-    /* ── Footer ── */
     footer {
       border-top: 1px solid var(--border);
       padding: 2rem;
@@ -277,7 +278,6 @@
     footer a:hover { text-decoration: underline; }
     .footer-inner { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; max-width: 1100px; margin: 0 auto; }
 
-    /* ── Responsive ── */
     @media (max-width: 600px) {
       .nav-links { display: none; }
       .hero h1 { font-size: 2.4rem; }
@@ -287,7 +287,6 @@
 </head>
 <body>
 
-<!-- Nav -->
 <nav>
   <div class="nav-inner">
     <a href="#" class="nav-logo">📋 clipygo</a>
@@ -300,7 +299,6 @@
   </div>
 </nav>
 
-<!-- Hero -->
 <section class="hero">
   <div>
     <div class="hero-badge">Open Source · Tauri · Rust</div>
@@ -323,7 +321,12 @@
   </div>
 </section>
 
-<!-- Features -->
+<section class="demo" aria-label="Demo video">
+  <div class="demo-frame">
+    <video src="clipygo-demo.mp4" poster="clipygo-demo.jpg" controls muted playsinline preload="metadata" width="1920" height="1080"></video>
+  </div>
+</section>
+
 <section id="features">
   <div class="container">
     <div class="section-label">Features</div>
@@ -374,7 +377,6 @@
   </div>
 </section>
 
-<!-- How it works -->
 <section id="how" class="how-bg">
   <div class="container">
     <div class="section-label">How it works</div>
@@ -400,7 +402,6 @@
   </div>
 </section>
 
-<!-- Plugin SDK -->
 <section id="plugin">
   <div class="container">
     <div class="section-label">Plugin SDK</div>
@@ -443,7 +444,6 @@
   </div>
 </section>
 
-<!-- Download -->
 <section id="download" class="how-bg">
   <div class="container">
     <div class="section-label">Download</div>
@@ -472,7 +472,6 @@
   </div>
 </section>
 
-<!-- About strip -->
 <div class="about-strip">
   <div class="about-inner">
     <p>
@@ -487,7 +486,6 @@
   </div>
 </div>
 
-<!-- Footer -->
 <footer>
   <div class="footer-inner">
     <span>© 2026 Georg Nelles · MIT License</span>
