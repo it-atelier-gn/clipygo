@@ -3,7 +3,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { onDestroy, onMount } from "svelte";
   import { invoke } from '@tauri-apps/api/core';
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import type { UnlistenFn } from "@tauri-apps/api/event";
   import {
     hasText,

@@ -3,7 +3,7 @@
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
   import { onDestroy, onMount, tick } from 'svelte';
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import type { UnlistenFn } from '@tauri-apps/api/event';
 
   interface DebugLogEntry {
