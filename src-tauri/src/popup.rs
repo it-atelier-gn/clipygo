@@ -14,40 +14,40 @@ pub struct Popup {
 pub const HISTORY: Popup = Popup {
     label: "history",
     title: "History - clipygo",
-    width: 900.0,
-    height: 640.0,
+    width: 780.0,
+    height: 560.0,
     resizable: true,
 };
 
 pub const EXEC_PICKER: Popup = Popup {
     label: "exec-picker",
     title: "Execute - clipygo",
-    width: 560.0,
-    height: 480.0,
+    width: 520.0,
+    height: 420.0,
     resizable: true,
 };
 
 pub const MORPH_PICKER: Popup = Popup {
     label: "morph-picker",
     title: "Morph - clipygo",
-    width: 560.0,
-    height: 640.0,
+    width: 520.0,
+    height: 580.0,
     resizable: true,
 };
 
 pub const SETTINGS: Popup = Popup {
     label: "settings",
     title: "Settings - clipygo",
-    width: 1024.0,
-    height: 768.0,
+    width: 840.0,
+    height: 680.0,
     resizable: true,
 };
 
 pub const DEBUG: Popup = Popup {
     label: "debug",
     title: "Debug Log - clipygo",
-    width: 900.0,
-    height: 600.0,
+    width: 820.0,
+    height: 520.0,
     resizable: true,
 };
 

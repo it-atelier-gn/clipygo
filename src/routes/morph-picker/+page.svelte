@@ -187,7 +187,7 @@
 
 <div class="picker">
   <div class="drag-strip" data-tauri-drag-region>
-    <span class="title" data-tauri-drag-region>Morph · transform clipboard</span>
+    <span class="title" data-tauri-drag-region>Morph</span>
     <button class="btn-close" data-tauri-drag-region="false" on:click={close}>✕</button>
   </div>
 
@@ -259,51 +259,98 @@
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
-    background: var(--bg-primary, var(--bg-surface));
+    background: var(--bg-primary);
   }
 
   .drag-strip {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-xs) var(--space-sm);
-    background: var(--bg-tertiary);
+    height: 36px;
+    padding: 0 var(--space-sm) 0 var(--space-lg);
     border-bottom: 1px solid var(--border-primary);
-    cursor: grab;
     user-select: none;
     flex-shrink: 0;
   }
 
   .title {
-    font-family: var(--font-gaming);
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-secondary);
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-primary);
   }
 
   .btn-close {
+    width: 24px;
+    height: 24px;
     background: none;
     border: none;
+    border-radius: var(--radius-md);
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.8rem;
+    transition: background var(--transition-fast), color var(--transition-fast);
   }
-  .btn-close:hover { color: var(--accent-secondary); }
+
+  .btn-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
 
   .body {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space-sm);
+    padding: var(--space-md) var(--space-lg);
     display: flex;
     flex-direction: column;
-    gap: var(--space-sm);
+    gap: var(--space-md);
+  }
+
+  .search {
+    width: 100%;
+    height: 30px;
+    padding: 0 var(--space-md);
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .search:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .search::placeholder { color: var(--text-muted); }
+
+  .error {
+    font-size: 0.78rem;
+    color: var(--accent-danger);
+  }
+
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 34px;
+    padding: 0 var(--space-lg);
+    border-top: 1px solid var(--border-primary);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+
+  .hint {
+    font-size: 0.72rem;
+    color: var(--text-muted);
   }
 
   .panel {
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-md);
-    background: var(--bg-elevated);
+    background: var(--bg-secondary);
     overflow: hidden;
   }
 
@@ -311,30 +358,44 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--space-xs) var(--space-sm);
+    height: 26px;
+    padding: 0 var(--space-sm) 0 var(--space-md);
     border-bottom: 1px solid var(--border-primary);
   }
 
   .panel-label {
-    font-family: var(--font-gaming);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
   }
 
   .nochange {
-    font-family: var(--font-mono);
-    font-size: 0.6rem;
-    color: var(--accent-secondary);
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+
+  .btn-mini {
+    height: 20px;
+    padding: 0 var(--space-md);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .btn-mini:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .text-box {
     margin: 0;
-    padding: var(--space-sm);
+    padding: var(--space-md);
     font-family: var(--font-mono);
     font-size: 0.75rem;
-    line-height: 1.4;
+    line-height: 1.45;
     color: var(--text-secondary);
     white-space: pre-wrap;
     word-break: break-word;
@@ -344,124 +405,72 @@
 
   .result .text-box { color: var(--text-primary); }
 
-  .search {
-    width: 100%;
-    box-sizing: border-box;
-    padding: var(--space-xs) var(--space-sm);
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    color: var(--text-primary);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-primary);
-    border-radius: var(--radius-md);
-    outline: none;
-    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
-  }
-
-  .search:focus {
-    border-color: var(--accent-primary);
-    box-shadow: var(--glow-primary);
-  }
-
-  .search::placeholder { color: var(--text-muted); }
-
   .transforms {
     display: flex;
     flex-direction: column;
-    gap: var(--space-xs);
+    gap: var(--space-md);
   }
 
   .no-match {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     color: var(--text-muted);
-    padding: var(--space-sm);
+    padding: var(--space-md);
     text-align: center;
   }
 
-  .group { display: flex; flex-direction: column; gap: 4px; }
+  .group { display: flex; flex-direction: column; gap: var(--space-sm); }
 
   .group-label {
-    font-family: var(--font-gaming);
-    font-size: 0.55rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    font-size: 0.72rem;
+    font-weight: 600;
     color: var(--text-muted);
   }
 
-  .chips { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+  .chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 
   .chip {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    padding: 3px var(--space-sm);
-    border-radius: var(--radius-sm);
+    height: 22px;
+    padding: 0 var(--space-md);
+    font-size: 0.75rem;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-primary);
-    background: var(--bg-tertiary);
+    background: var(--bg-surface);
     color: var(--text-secondary);
     cursor: pointer;
-    transition: all var(--transition-normal);
+    transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   }
 
-  .chip:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
-
-  .chip.active {
-    border-color: var(--accent-primary);
+  .chip:hover {
+    border-color: var(--border-secondary);
     color: var(--text-primary);
-    background: var(--bg-surface);
-    box-shadow: var(--glow-primary);
   }
 
   .chip.highlight {
-    border-color: var(--accent-primary);
+    border-color: var(--accent-ring);
+    background: var(--accent-soft);
     color: var(--text-primary);
-    background: var(--bg-surface);
-    outline: 1px solid var(--accent-primary);
-    outline-offset: 1px;
   }
 
-  .error {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--accent-secondary);
-    padding: var(--space-xs) var(--space-sm);
-  }
-
-  .footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-sm);
-    border-top: 1px solid var(--border-primary);
-    background: var(--bg-tertiary);
-    flex-shrink: 0;
-  }
-
-  .hint {
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    color: var(--text-muted);
+  .chip.active {
+    border-color: var(--accent-primary);
+    background: var(--accent-primary);
+    color: var(--on-accent);
   }
 
   .btn-apply {
-    font-family: var(--font-gaming);
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: var(--space-xs) var(--space-lg);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--accent-primary);
-    background: var(--bg-surface);
-    color: var(--accent-primary);
+    height: 24px;
+    padding: 0 var(--space-lg);
+    border-radius: var(--radius-md);
+    border: none;
+    background: var(--accent-primary);
+    color: var(--on-accent);
+    font-size: 0.78rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: all var(--transition-normal);
+    transition: background var(--transition-fast);
   }
 
-  .btn-apply:hover:not(:disabled) {
-    box-shadow: var(--glow-primary);
-    color: var(--text-primary);
-  }
+  .btn-apply:hover:not(:disabled) { background: var(--accent-primary-dark); }
 
   .btn-apply:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

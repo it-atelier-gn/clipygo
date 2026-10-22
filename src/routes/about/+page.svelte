@@ -38,28 +38,27 @@
 <style>
   .close-btn {
     position: fixed;
-    top: 8px;
-    right: 8px;
+    top: 6px;
+    right: 6px;
     width: 24px;
     height: 24px;
     padding: 0;
     background: transparent;
-    border: 1px solid var(--border-primary);
-    border-radius: var(--radius-sm);
+    border: none;
+    border-radius: var(--radius-md);
     color: var(--text-muted);
     font-size: 11px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all var(--transition-fast);
+    transition: background var(--transition-fast), color var(--transition-fast);
     z-index: 10;
   }
 
   .close-btn:hover {
-    background: var(--accent-danger);
-    border-color: var(--accent-danger);
-    color: white;
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .about-body {
@@ -67,33 +66,27 @@
     flex-direction: column;
     align-items: center;
     gap: var(--space-sm);
-    padding: var(--space-xl) 0;
+    padding: var(--space-2xl) 0 var(--space-xl);
   }
 
   .about-logo {
-    width: 80px;
-    height: 80px;
-    margin-bottom: var(--space-sm);
+    width: 56px;
+    height: 56px;
+    margin-bottom: var(--space-md);
     border-radius: var(--radius-lg);
-    filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.4));
   }
 
   .about-title {
-    font-family: var(--font-gaming);
-    font-size: 1.75rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    font-family: var(--font-serif);
+    font-size: 1.6rem;
+    font-weight: 500;
+    color: var(--text-primary);
     margin: 0;
   }
 
   .about-version {
-    font-family: var(--font-mono);
-    font-size: 0.9rem;
-    color: var(--accent-primary);
-    letter-spacing: 0.05em;
+    font-size: 0.8rem;
+    color: var(--text-muted);
   }
 
   .about-description {
@@ -102,25 +95,28 @@
     text-align: center;
     max-width: 260px;
     line-height: 1.5;
+    margin-top: var(--space-sm);
   }
 
   .about-link {
     background: none;
     border: none;
-    color: var(--text-muted);
+    color: var(--accent-primary);
     font-size: 0.8rem;
     cursor: pointer;
     padding: 0;
-    transition: color var(--transition-fast);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: var(--accent-ring);
   }
 
   .about-link:hover {
-    color: var(--accent-primary);
+    text-decoration-color: currentColor;
   }
 
   .about-copyright {
     color: var(--text-muted);
-    font-size: 0.75rem;
-    margin-top: var(--space-md);
+    font-size: 0.72rem;
+    margin-top: var(--space-lg);
   }
 </style>

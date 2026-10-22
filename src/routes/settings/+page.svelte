@@ -126,7 +126,6 @@
   let pluginLinks: Record<string, string> = {};
   let pluginStatuses: Record<string, { healthy: boolean; error: string | null }> = {};
 
-  // registry state
   let registry: Registry | null = null;
   let registryLoading = false;
   let registryError = '';
@@ -206,7 +205,6 @@
     }
   }
 
-  // inline editing state
   let editingId: string | null = null;
   let editDraft = { name: '', command: '' };
   let editTestResult: boolean | null = null;
@@ -273,7 +271,6 @@
         entries.map(e => [e.id, { healthy: e.healthy, error: e.error }])
       );
     } catch {
-      // non-critical — statuses just won't show
     }
   }
 
@@ -476,7 +473,6 @@
     }
   }
 
-  // Config modal
 
   interface ArrayItemProperty {
     type: 'string';
@@ -612,14 +608,13 @@
 
 <div class="app" data-tauri-drag-region>
   <div class="container">
-    <!-- Header -->
     <div class="header compact">
       <div class="header-content flex justify-between items-center">
         <div class="header-main" data-tauri-drag-region>
-          <h1 class="h2 title-shimmer" data-tauri-drag-region>⚙️ clipygo Settings</h1>
-          <p class="subtitle" data-tauri-drag-region>Configure your application</p>
+          <h1 data-tauri-drag-region>Settings</h1>
+          <p class="subtitle" data-tauri-drag-region>clipygo</p>
         </div>
-        <button class="btn btn-danger btn-sm close-btn-aligned" on:click={closeWindow}>
+        <button class="btn btn-ghost btn-icon" aria-label="Close" on:click={closeWindow}>
           ✕
         </button>
       </div>
@@ -635,24 +630,23 @@
       <div class="card">
         <div class="loading-state">
           <div class="spinner"></div>
-          <span>Initializing Configuration...</span>
+          <span>Loading settings…</span>
         </div>
       </div>
     {:else if settings}
       <div class="settings-form">
 
-        <!-- General Settings -->
         <div class="card">
           <div class="card-header">
-            <h2 class="h3">🔧 System Preferences</h2>
-            <p class="text-secondary">Core application configuration</p>
+            <h2 class="h3">General</h2>
+            <p class="text-secondary">Startup and hotkeys</p>
           </div>
           <div class="card-body">
             <div class="setting-group">
               <div class="toggle-setting">
                 <div class="setting-info">
-                  <h3>Auto-Launch Protocol</h3>
-                  <p class="text-secondary">Activate on system boot sequence</p>
+                  <h3>Start with system</h3>
+                  <p class="text-secondary">Launch clipygo when you sign in</p>
                 </div>
                 <div class="toggle-wrapper">
                   <input
@@ -670,7 +664,7 @@
             <div class="setting-group">
               <div class="toggle-setting">
                 <div class="setting-info">
-                  <h3>Debug Log</h3>
+                  <h3>Debug log</h3>
                   <p class="text-secondary">Show debug log in system tray menu (restart required)</p>
                 </div>
                 <div class="toggle-wrapper">
@@ -688,8 +682,8 @@
 
             <div class="setting-group">
               <div class="input-setting">
-                <h3>Global Access Key</h3>
-                <p class="text-secondary">Hotkey combination for window activation</p>
+                <h3>Main hotkey</h3>
+                <p class="text-secondary">Opens the main window</p>
                 <input
                   class="input input-gaming"
                   value={settings.global_shortcut}
@@ -701,7 +695,7 @@
 
             <div class="setting-group">
               <div class="input-setting">
-                <h3>History Hotkey</h3>
+                <h3>History hotkey</h3>
                 <p class="text-secondary">Hotkey to open the clipboard history window</p>
                 <input
                   class="input input-gaming"
@@ -714,17 +708,16 @@
           </div>
         </div>
 
-        <!-- History -->
         <div class="card">
           <div class="card-header">
-            <h2 class="h3">🗂 Clipboard History</h2>
+            <h2 class="h3">Clipboard history</h2>
             <p class="text-secondary">Captured clipboard items, viewable only inside clipygo</p>
           </div>
           <div class="card-body">
             <div class="setting-group">
               <div class="toggle-setting">
                 <div class="setting-info">
-                  <h3>Capture Clipboard</h3>
+                  <h3>Capture clipboard</h3>
                   <p class="text-secondary">Record every clipboard change into an encrypted history</p>
                 </div>
                 <div class="toggle-wrapper">
@@ -742,7 +735,7 @@
 
             <div class="setting-group">
               <div class="input-setting">
-                <h3>In-Memory Buffer (MB)</h3>
+                <h3>Memory buffer (MB)</h3>
                 <p class="text-secondary">Cap for the always-on in-memory ring buffer</p>
                 <input
                   class="input input-gaming"
@@ -758,7 +751,7 @@
             <div class="setting-group">
               <div class="toggle-setting">
                 <div class="setting-info">
-                  <h3>Persist to Disk</h3>
+                  <h3>Keep history on disk</h3>
                   <p class="text-secondary">
                     Survive restarts via encrypted SQLite. Content bytes encrypted with
                     XChaCha20-Poly1305; key in OS keystore. Toggling discards current entries.
@@ -779,7 +772,7 @@
 
             <div class="setting-group">
               <div class="input-setting">
-                <h3>On-Disk Buffer (MB)</h3>
+                <h3>Disk buffer (MB)</h3>
                 <p class="text-secondary">Cap for the encrypted on-disk store (applies when persistence is on)</p>
                 <input
                   class="input input-gaming"
@@ -794,10 +787,9 @@
           </div>
         </div>
 
-        <!-- Morph -->
         <div class="card">
           <div class="card-header">
-            <h2 class="h3">🪄 Morph</h2>
+            <h2 class="h3">Morph</h2>
             <p class="text-secondary">Rule-based, in-place clipboard transformations</p>
           </div>
           <div class="card-body">
@@ -822,7 +814,7 @@
 
             <div class="setting-group">
               <div class="input-setting">
-                <h3>Manual Transform Hotkey</h3>
+                <h3>Transform hotkey</h3>
                 <p class="text-secondary">Opens a preview window to apply any transformation on demand</p>
                 <input
                   class="input input-gaming"
@@ -861,7 +853,7 @@
                       <option value="builtin">Built-in</option>
                       <option value="replace">Regex replace</option>
                     </select>
-                    <button type="button" class="btn btn-danger btn-sm" on:click={() => removeMorphRule(index)}>✕</button>
+                    <button type="button" class="btn btn-ghost btn-icon btn-remove" aria-label="Remove" on:click={() => removeMorphRule(index)}>✕</button>
                   </div>
 
                   <div class="morph-rule-fields">
@@ -941,16 +933,15 @@
               {/each}
 
               <button type="button" class="btn btn-secondary btn-full" on:click={addMorphRule}>
-                + Add Rule
+                + Add rule
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Execute -->
         <div class="card">
           <div class="card-header">
-            <h2 class="h3">⚡ Execute</h2>
+            <h2 class="h3">Execute</h2>
             <p class="text-secondary">Launch external commands from the clipboard</p>
           </div>
           <div class="card-body">
@@ -975,7 +966,7 @@
 
             <div class="setting-group">
               <div class="input-setting">
-                <h3>Execute Hotkey</h3>
+                <h3>Execute hotkey</h3>
                 <p class="text-secondary">Opens the command picker (or auto-runs a single matching command)</p>
                 <input
                   class="input input-gaming"
@@ -1006,7 +997,7 @@
                       placeholder="Command name"
                       on:input={(e) => { settings!.exec_commands[index].name = e.currentTarget.value; scheduleSave(); }}
                     />
-                    <button type="button" class="btn btn-danger btn-sm" on:click={() => removeExecCommand(index)}>✕</button>
+                    <button type="button" class="btn btn-ghost btn-icon btn-remove" aria-label="Remove" on:click={() => removeExecCommand(index)}>✕</button>
                   </div>
 
                   <div class="morph-rule-fields">
@@ -1055,23 +1046,21 @@
               {/each}
 
               <button type="button" class="btn btn-secondary btn-full" on:click={addExecCommand}>
-                + Add Command
+                + Add command
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Plugins -->
         <div class="card">
           <div class="card-header">
-            <h2 class="h3">🔌 Plugins</h2>
-            <p class="text-secondary">Subprocess target provider executables</p>
+            <h2 class="h3">Plugins</h2>
+            <p class="text-secondary">Programs that provide send targets</p>
           </div>
           <div class="card-body">
             <div class="plugin-list">
               {#each settings.target_providers.plugins as plugin}
                 {#if editingId === plugin.id}
-                  <!-- Edit mode -->
                   <div class="plugin-item plugin-item--editing">
                     <div class="plugin-edit-fields">
                       <input class="input" bind:value={editDraft.name} placeholder="Name" />
@@ -1083,12 +1072,11 @@
                       </span>
                       <button type="button" class="btn btn-secondary btn-sm" on:click={testEditPlugin}>Test</button>
                       <button type="button" class="btn btn-primary btn-sm" on:click={() => saveEdit(plugin.id)}>Save</button>
-                      <button type="button" class="btn btn-sm" on:click={cancelEdit}>Cancel</button>
-                      <button type="button" class="btn btn-danger btn-sm" on:click={() => removePlugin(plugin.id)}>✕</button>
+                      <button type="button" class="btn btn-ghost btn-sm" on:click={cancelEdit}>Cancel</button>
+                      <button type="button" class="btn btn-ghost btn-icon btn-remove" aria-label="Remove" on:click={() => removePlugin(plugin.id)}>✕</button>
                     </div>
                   </div>
                 {:else}
-                  <!-- Read mode -->
                   <div class="plugin-item" class:plugin-item--invalid={pluginPathValid[plugin.id] === false || (pluginStatuses[plugin.id] && !pluginStatuses[plugin.id].healthy)}>
                     <div class="plugin-info">
                       <h3 class="plugin-name">
@@ -1122,13 +1110,12 @@
                       </div>
                       <button type="button" class="btn btn-secondary btn-sm" title="Configure plugin" on:click={() => openConfigModal(plugin)}>⚙</button>
                       <button type="button" class="btn btn-secondary btn-sm" on:click={() => startEdit(plugin)}>Edit</button>
-                      <button type="button" class="btn btn-danger btn-sm" on:click={() => removePlugin(plugin.id)}>✕</button>
+                      <button type="button" class="btn btn-ghost btn-icon btn-remove" aria-label="Remove" on:click={() => removePlugin(plugin.id)}>✕</button>
                     </div>
                   </div>
                 {/if}
               {/each}
 
-              <!-- Add row -->
               <div class="plugin-add">
                 <input class="input" bind:value={newPlugin.name} placeholder="Name" />
                 <input
@@ -1148,10 +1135,9 @@
           </div>
         </div>
 
-        <!-- Registry -->
         <div class="card">
           <div class="card-header">
-            <h2 class="h3">📦 Plugin Registry</h2>
+            <h2 class="h3">Plugin registry</h2>
             <p class="text-secondary">Browse and install published plugins</p>
           </div>
           <div class="card-body">
@@ -1225,11 +1211,10 @@
           </div>
         </div>
 
-        <!-- Regex Patterns -->
         <div class="card">
           <div class="card-header">
-            <h2 class="h3">🔍 Pattern Recognition</h2>
-            <p class="text-secondary">Content detection algorithms</p>
+            <h2 class="h3">Patterns</h2>
+            <p class="text-secondary">Regular expressions that mark clipboard content as a match</p>
           </div>
           <div class="card-body">
             <div class="regex-list">
@@ -1238,13 +1223,14 @@
                   <span class="regex-number">{(index + 1).toString().padStart(2, '0')}.</span>
                   <input
                     value={pattern}
-                    placeholder="Enter pattern..."
+                    placeholder="Regular expression"
                     class="input regex-input"
                     on:input={(e) => { settings!.regex_list[index] = e.currentTarget.value; scheduleSave(); }}
                   />
                   <button
                     type="button"
-                    class="btn btn-danger btn-sm"
+                    class="btn btn-ghost btn-icon btn-remove"
+                    aria-label="Remove"
                     on:click={() => removeRegexPattern(index)}
                   >
                     ✕
@@ -1257,7 +1243,7 @@
                 class="btn btn-secondary btn-full"
                 on:click={addRegexPattern}
               >
-                + Add Pattern
+                + Add pattern
               </button>
             </div>
           </div>
@@ -1267,9 +1253,9 @@
     {:else}
       <div class="card">
         <div class="error-state">
-          <h2 class="text-accent">Configuration Load Failed</h2>
+          <h2>Settings could not be loaded</h2>
           <button class="btn btn-primary" on:click={loadSettings}>
-            Retry Connection
+            Retry
           </button>
         </div>
       </div>
@@ -1283,7 +1269,7 @@
     <div class="modal">
       <div class="modal-header">
         <h2 class="modal-title">{configPluginName}</h2>
-        <button class="btn btn-sm" on:click={closeConfigModal}>✕</button>
+        <button class="btn btn-ghost btn-icon" aria-label="Close" on:click={closeConfigModal}>✕</button>
       </div>
       <div class="modal-body">
         {#if configLoading}
@@ -1335,7 +1321,7 @@
                             on:input={(e) => updateArrayItem(key, i, field, e.currentTarget.value)}
                           />
                         {/each}
-                        <button type="button" class="btn btn-sm btn-danger" on:click={() => removeArrayItem(key, i)}>Remove</button>
+                        <button type="button" class="btn btn-ghost btn-sm btn-remove" on:click={() => removeArrayItem(key, i)}>Remove</button>
                       </div>
                     {/each}
                     {#if !prop.maxItems || ((configValues[key] as unknown[])?.length ?? 0) < prop.maxItems}
@@ -1413,38 +1399,51 @@
 {/if}
 
 <style>
-  .title-shimmer {
-    background: linear-gradient(
-      90deg,
-      var(--accent-primary) 20%,
-      #ffffff 50%,
-      var(--accent-primary) 80%
-    );
-    background-size: 200% auto;
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: shimmer 3s linear infinite;
+  .app {
+    background: var(--bg-primary);
   }
 
-  @keyframes shimmer {
-    0%   { background-position: 200% center; }
-    100% { background-position: -200% center; }
+  .container {
+    max-width: 760px;
+    padding: 0 var(--space-xl) var(--space-xl);
+  }
+
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    margin: 0 calc(-1 * var(--space-xl)) var(--space-lg);
+    padding: 0 var(--space-sm) 0 var(--space-xl);
   }
 
   .header-content {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--space-md) 0;
+    height: 44px;
+    padding: 0;
   }
 
   .header-main {
     flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-md);
   }
 
-  .close-btn-aligned {
-    margin-right: var(--space-md);
+  .header-main h1 {
+    font-family: var(--font-serif);
+    font-size: 1.15rem;
+    font-weight: 500;
+    margin: 0;
+  }
+
+  .header-main .subtitle {
+    font-size: 0.78rem;
+  }
+
+  .message {
+    margin-bottom: var(--space-md);
   }
 
   .settings-form {
@@ -1453,93 +1452,105 @@
     gap: var(--space-lg);
   }
 
+  .card-header {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
+    background: var(--bg-secondary);
+  }
+
+  .card-header h2 {
+    font-family: var(--font-serif);
+    font-size: 0.98rem;
+    font-weight: 500;
+    margin: 0;
+  }
+
+  .card-header p {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .card-body {
+    padding: 0 var(--space-lg);
+  }
+
+  .card-body > .morph-rules,
+  .card-body > .plugin-list,
+  .card-body > .regex-list,
+  .card-body > .registry-url-row,
+  .card-body > .registry-list {
+    padding: var(--space-md) 0;
+  }
+
+  .card-body > .registry-url-row + .registry-list {
+    padding-top: 0;
+  }
+
   .setting-group {
-    margin-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--border-primary);
   }
 
   .setting-group:last-child {
-    margin-bottom: 0;
+    border-bottom: none;
   }
 
   .toggle-setting {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    cursor: pointer;
-    padding: var(--space-lg);
-    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
-    border: 1px solid var(--border-primary);
-    border-radius: var(--radius-lg);
-    transition: all var(--transition-normal);
-    position: relative;
-    overflow: hidden;
+    gap: var(--space-xl);
+    padding: var(--space-md) 0;
   }
 
-  .toggle-setting::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 4px;
-    height: 100%;
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-    opacity: 0;
-    transition: opacity var(--transition-normal);
-  }
-
-  .toggle-setting:hover {
-    border-color: var(--accent-primary);
-    transform: translateX(4px);
-  }
-
-  .toggle-setting:hover::before {
-    opacity: 1;
-  }
-
-  .setting-info h3 {
-    margin: 0 0 var(--space-xs) 0;
-    font-family: var(--font-gaming);
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .setting-info p {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
-
+  .setting-info h3,
   .input-setting h3 {
-    margin: 0 0 var(--space-xs) 0;
-    font-family: var(--font-gaming);
-    font-size: 1.125rem;
-    font-weight: 600;
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 500;
     color: var(--text-primary);
   }
 
+  .setting-info p,
   .input-setting p {
-    margin: 0 0 var(--space-md) 0;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--text-muted);
   }
 
-  /* Plugin list */
+  .input-setting {
+    display: grid;
+    grid-template-columns: 1fr 200px;
+    column-gap: var(--space-xl);
+    align-items: center;
+    padding: var(--space-md) 0;
+  }
+
+  .input-setting h3 { grid-column: 1; grid-row: 1; }
+  .input-setting p { grid-column: 1; grid-row: 2; }
+  .input-setting .input { grid-column: 2; grid-row: 1 / span 2; }
+
   .plugin-list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-md);
+    gap: var(--space-sm);
   }
 
-  .plugin-item {
+  .plugin-item,
+  .registry-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--space-md);
-    padding: var(--space-md);
-    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
+    padding: var(--space-sm) var(--space-md);
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-md);
+  }
+
+  .plugin-item--invalid {
+    border-color: color-mix(in srgb, var(--accent-danger) 40%, transparent);
   }
 
   .plugin-info {
@@ -1548,9 +1559,11 @@
   }
 
   .plugin-name {
-    margin: 0 0 2px 0;
-    font-family: var(--font-gaming);
-    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin: 0;
+    font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary);
   }
@@ -1559,28 +1572,17 @@
     font-size: 0.75rem;
     color: var(--accent-primary);
     text-decoration: none;
-    margin-left: 4px;
   }
 
   .plugin-link:hover {
     text-decoration: underline;
   }
 
-  .config-instructions {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    white-space: pre-line;
-    margin-bottom: 12px;
-    padding: 8px 10px;
-    background: var(--bg-tertiary, rgba(255,255,255,0.03));
-    border-radius: 6px;
-    border-left: 3px solid var(--accent-primary);
-  }
-
   .plugin-path {
     margin: 0;
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1599,13 +1601,13 @@
     gap: var(--space-sm);
     align-items: center;
     padding-top: var(--space-sm);
-    border-top: 1px solid var(--border-primary);
   }
 
   .plugin-item--editing {
     flex-direction: column;
     align-items: stretch;
     gap: var(--space-sm);
+    padding: var(--space-md);
   }
 
   .plugin-edit-fields {
@@ -1622,31 +1624,34 @@
   }
 
   .test-result {
-    font-family: var(--font-mono);
     font-size: 0.75rem;
-    font-weight: 600;
-    min-width: 6ch;
+    font-weight: 500;
+    min-width: 3ch;
     text-align: center;
   }
 
-  .test-result.test-ok {
-    color: #00ff88;
-  }
-
-  .test-result.test-fail {
-    color: #ff5050;
-  }
+  .test-result.test-ok { color: var(--accent-success); }
+  .test-result.test-fail { color: var(--accent-danger); }
 
   .plugin-command-input {
     font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-size: 0.78rem;
   }
 
-  /* Regex List */
+  .config-instructions {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    white-space: pre-line;
+    margin-bottom: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+  }
+
   .regex-list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-md);
+    gap: var(--space-sm);
   }
 
   .regex-item {
@@ -1657,19 +1662,16 @@
 
   .regex-number {
     font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--accent-primary);
-    min-width: 32px;
-    text-shadow: 0 0 10px var(--accent-primary);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    min-width: 22px;
   }
 
   .regex-input {
     flex: 1;
     font-family: var(--font-mono);
-    font-size: 0.875rem;
+    font-size: 0.78rem;
   }
-
 
   .error-state {
     text-align: center;
@@ -1678,39 +1680,24 @@
 
   .error-state h2 {
     margin-bottom: var(--space-lg);
-    font-family: var(--font-gaming);
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--space-lg);
-  }
-
-  .empty-icon {
-    font-size: 2rem;
-    margin-bottom: var(--space-sm);
-    opacity: 0.6;
+    font-family: var(--font-serif);
+    font-weight: 500;
+    font-size: 1.05rem;
   }
 
   .registry-url-row {
     display: grid;
     grid-template-columns: 1fr auto;
     gap: var(--space-sm);
-    margin-bottom: var(--space-md);
+    align-items: center;
   }
 
-  .install-error {
-    color: #ff5050;
+  .install-error,
+  .registry-error,
+  .config-error {
+    color: var(--accent-danger);
     font-size: 0.75rem;
-    font-family: var(--font-mono);
-    margin: var(--space-xs) var(--space-md) 0;
-  }
-
-  .registry-error {
-    color: #ff5050;
-    font-size: 0.8rem;
-    font-family: var(--font-mono);
-    margin-bottom: var(--space-sm);
+    margin: var(--space-xs) 0 var(--space-sm);
   }
 
   .registry-list {
@@ -1719,64 +1706,64 @@
     gap: var(--space-sm);
   }
 
-  .registry-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-md);
-    padding: var(--space-md);
-    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
-    border: 1px solid var(--border-primary);
-    border-radius: var(--radius-md);
-  }
-
   .registry-author {
     margin: 0;
     font-size: 0.7rem;
-    font-family: var(--font-mono);
+    color: var(--text-muted);
+  }
+
+  .badge-version,
+  .badge-installed,
+  .badge-warning,
+  .badge-healthy,
+  .badge-coming-soon {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    padding: 0 6px;
+    border-radius: var(--radius-sm);
+    font-size: 0.66rem;
+    font-weight: 500;
   }
 
   .badge-version {
-    display: inline-block;
-    font-size: 0.65rem;
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
     font-family: var(--font-mono);
-    padding: 2px 5px;
-    border-radius: 4px;
-    background: rgba(0, 212, 255, 0.1);
-    border: 1px solid rgba(0, 212, 255, 0.3);
-    color: var(--accent-primary);
-    vertical-align: middle;
-    margin-left: 6px;
   }
 
-  .badge-installed {
-    font-size: 0.65rem;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: rgba(0, 255, 136, 0.1);
-    border: 1px solid rgba(0, 255, 136, 0.3);
-    color: #00ff88;
+  .badge-installed,
+  .badge-healthy {
+    background: color-mix(in srgb, var(--accent-success) 12%, transparent);
+    color: var(--accent-success);
+  }
+
+  .badge-warning {
+    background: color-mix(in srgb, var(--accent-danger) 12%, transparent);
+    color: var(--accent-danger);
+    cursor: help;
+  }
+
+  .badge-coming-soon {
+    background: color-mix(in srgb, var(--accent-warning) 14%, transparent);
+    color: var(--accent-warning);
   }
 
   .badge-update {
-    font-size: 0.65rem;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 4px;
-    background: rgba(255, 165, 0, 0.15);
-    border: 1px solid rgba(255, 165, 0, 0.5);
-    color: #ffa500;
+    height: 22px;
+    padding: 0 var(--space-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--accent-primary);
+    background: var(--accent-soft);
+    color: var(--accent-primary);
+    font-size: 0.72rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: all var(--transition-normal);
+    transition: background var(--transition-fast);
   }
 
   .badge-update:hover:not(:disabled) {
-    background: rgba(255, 165, 0, 0.25);
-    border-color: #ffa500;
-    box-shadow: 0 0 8px rgba(255, 165, 0, 0.3);
+    background: var(--accent-ring);
   }
 
   .badge-update:disabled {
@@ -1784,60 +1771,10 @@
     cursor: wait;
   }
 
-  .badge-coming-soon {
-    display: inline-block;
-    font-size: 0.65rem;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: rgba(255, 165, 0, 0.15);
-    border: 1px solid rgba(255, 165, 0, 0.4);
-    color: #ffa500;
-    vertical-align: middle;
-    margin-left: 6px;
-  }
-
-  .badge-warning {
-    display: inline-block;
-    font-size: 0.65rem;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: rgba(255, 80, 80, 0.15);
-    border: 1px solid rgba(255, 80, 80, 0.4);
-    color: #ff5050;
-    vertical-align: middle;
-    margin-left: 6px;
-    cursor: help;
-  }
-
-  .badge-healthy {
-    display: inline-block;
-    font-size: 0.65rem;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: rgba(0, 255, 136, 0.15);
-    border: 1px solid rgba(0, 255, 136, 0.4);
-    color: #00ff88;
-    vertical-align: middle;
-    margin-left: 6px;
-  }
-
-  .plugin-item--invalid {
-    border-color: rgba(255, 80, 80, 0.4);
-  }
-
-  /* Config modal */
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.75);
+    background: rgba(20, 20, 19, 0.45);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1845,31 +1782,32 @@
   }
 
   .modal {
-    background: var(--bg-elevated);
+    background: var(--bg-primary);
     border: 1px solid var(--border-primary);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     width: 90%;
-    max-width: 460px;
+    max-width: 440px;
     max-height: 80vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-xl);
   }
 
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--space-md) var(--space-lg);
+    height: 42px;
+    padding: 0 var(--space-sm) 0 var(--space-lg);
     border-bottom: 1px solid var(--border-primary);
   }
 
   .modal-title {
     margin: 0;
-    font-family: var(--font-gaming);
+    font-family: var(--font-serif);
     font-size: 1rem;
-    font-weight: 600;
-    color: var(--accent-primary);
+    font-weight: 500;
+    color: var(--text-primary);
   }
 
   .modal-body {
@@ -1899,32 +1837,27 @@
   }
 
   .config-label {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: 0.82rem;
+    font-weight: 500;
     color: var(--text-primary);
   }
 
   .config-description {
-    margin: 0;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
+    margin: 0 0 var(--space-xs);
+    font-size: 0.72rem;
+    color: var(--text-muted);
     line-height: 1.4;
   }
 
-  .config-error {
-    color: #ff5050;
-    font-size: 0.8rem;
-    font-family: var(--font-mono);
-    margin-top: var(--space-sm);
-  }
-
-  .password-wrapper {
+  .password-wrapper,
+  .readonly-wrapper {
     position: relative;
     display: flex;
     align-items: center;
   }
 
-  .password-wrapper .input {
+  .password-wrapper .input,
+  .readonly-wrapper .input {
     padding-right: 2.5rem;
   }
 
@@ -1932,53 +1865,28 @@
     right: 2rem;
   }
 
-  .eye-toggle {
+  .eye-toggle,
+  .copy-btn {
     position: absolute;
-    right: 0.5rem;
+    right: 0.4rem;
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 1rem;
-    padding: 0.25rem;
+    font-size: 0.85rem;
+    padding: 0.2rem;
     line-height: 1;
-    opacity: 0.6;
-    transition: opacity var(--transition-normal);
+    opacity: 0.55;
+    transition: opacity var(--transition-fast);
   }
 
-  .eye-toggle:hover {
+  .eye-toggle:hover,
+  .copy-btn:hover {
     opacity: 1;
   }
 
   input[readonly] {
-    opacity: 0.7;
+    color: var(--text-muted);
     cursor: default;
-  }
-
-  .readonly-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-
-  .readonly-wrapper .input {
-    padding-right: 2.5rem;
-  }
-
-  .copy-btn {
-    position: absolute;
-    right: 0.5rem;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 0.9rem;
-    padding: 0.25rem;
-    line-height: 1;
-    opacity: 0.6;
-    transition: opacity var(--transition-normal);
-  }
-
-  .copy-btn:hover {
-    opacity: 1;
   }
 
   .array-field {
@@ -1998,11 +1906,10 @@
     min-width: 0;
   }
 
-  /* Morph rules */
   .morph-rules {
     display: flex;
     flex-direction: column;
-    gap: var(--space-md);
+    gap: var(--space-sm);
   }
 
   .morph-rule {
@@ -2010,7 +1917,7 @@
     flex-direction: column;
     gap: var(--space-sm);
     padding: var(--space-md);
-    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
+    background: var(--bg-secondary);
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-md);
   }
@@ -2018,46 +1925,42 @@
   .morph-rule-top {
     display: grid;
     grid-template-columns: auto 1fr auto auto;
-    gap: var(--space-sm);
+    gap: var(--space-md);
     align-items: center;
   }
 
   .morph-name {
-    font-family: var(--font-gaming);
-    font-size: 0.85rem;
+    font-weight: 500;
   }
 
   .morph-kind {
     width: auto;
-    font-size: 0.8rem;
   }
 
   .morph-rule-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: var(--space-sm) var(--space-md);
+    align-items: center;
   }
 
   .morph-field-label {
-    font-family: var(--font-gaming);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    font-size: 0.72rem;
     color: var(--text-muted);
-    margin-top: var(--space-xs);
+    line-height: 1.3;
   }
 
   .morph-mono {
     font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-size: 0.78rem;
   }
 
   .morph-test {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding-top: var(--space-xs);
-    border-top: 1px dashed var(--border-primary);
+    gap: var(--space-sm);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--border-primary);
   }
 
   .morph-test-toggle {
@@ -2065,16 +1968,12 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 2px 0;
-    font-family: var(--font-gaming);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    padding: 0;
+    font-size: 0.75rem;
     color: var(--text-muted);
-    transition: color var(--transition-normal);
   }
 
-  .morph-test-toggle:hover { color: var(--accent-primary); }
+  .morph-test-toggle:hover { color: var(--text-primary); }
 
   .morph-test-input {
     resize: vertical;
@@ -2083,53 +1982,55 @@
 
   .morph-test-status {
     display: flex;
-    gap: var(--space-xs);
+    gap: var(--space-sm);
     flex-wrap: wrap;
-    margin-top: 4px;
   }
 
   .morph-test-status.err {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--accent-secondary);
+    font-size: 0.75rem;
+    color: var(--accent-danger);
   }
 
   .badge {
-    font-family: var(--font-gaming);
-    font-size: 0.55rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 2px var(--space-xs);
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    font-size: 0.66rem;
+    font-weight: 500;
+    padding: 0 6px;
     border-radius: var(--radius-sm);
-    border: 1px solid var(--border-primary);
+    background: var(--bg-tertiary);
   }
 
   .badge-ok {
-    color: var(--accent-primary);
-    border-color: var(--accent-primary);
+    color: var(--accent-success);
+    background: color-mix(in srgb, var(--accent-success) 12%, transparent);
   }
 
   .badge-muted { color: var(--text-muted); }
 
   .exec-check {
+    grid-column: 1 / -1;
     display: flex;
     align-items: center;
-    gap: var(--space-xs);
-    margin-top: var(--space-xs);
-    font-family: var(--font-mono);
-    font-size: 0.75rem;
+    gap: var(--space-sm);
+    font-size: 0.78rem;
     color: var(--text-secondary);
     cursor: pointer;
   }
 
+  .exec-check input {
+    accent-color: var(--accent-primary);
+  }
+
   .morph-test-output {
     margin: 0;
-    padding: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
     font-family: var(--font-mono);
-    font-size: 0.78rem;
-    line-height: 1.4;
+    font-size: 0.75rem;
+    line-height: 1.45;
     color: var(--text-primary);
-    background: var(--bg-tertiary);
+    background: var(--bg-surface);
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-sm);
     white-space: pre-wrap;
