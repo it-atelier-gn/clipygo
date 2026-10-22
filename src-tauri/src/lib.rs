@@ -3,6 +3,7 @@ mod exec;
 pub mod history;
 pub mod history_commands;
 mod morph;
+mod popup;
 mod settings;
 mod target_providers;
 mod targets;
@@ -34,7 +35,6 @@ pub struct DebugLogEntry {
     pub level: String,
 }
 
-/// Emits a debug log entry to the frontend and prints to stdout.
 pub fn debug_log(app: &AppHandle, source: &str, level: &str, message: String) {
     println!("[{source}] {message}");
     let entry = DebugLogEntry {
@@ -61,11 +61,8 @@ pub struct DebugLogQueue(pub Mutex<Vec<DebugLogEntry>>);
 
 pub struct LastClipHash(pub Mutex<Option<u64>>);
 
-/// Hash of a value Morph just wrote to the clipboard, used to ignore the
-/// monitor event triggered by our own write so transforms don't loop.
 pub struct MorphEcho(pub Mutex<Option<u64>>);
 
-/// Morph events queued for the notification window to drain when it first mounts.
 pub struct MorphNotifyQueue(pub Mutex<Vec<serde_json::Value>>);
 
 pub fn hash_text(text: &str) -> u64 {
@@ -224,9 +221,7 @@ pub fn run() {
                 let window_clone = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        // Prevent the default close behavior
                         api.prevent_close();
-                        // Hide the window instead
                         window_clone.hide().unwrap();
                     }
                 });
@@ -236,9 +231,7 @@ pub fn run() {
                 let settings_window_clone = settings_window.clone();
                 settings_window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        // Prevent the default close behavior
                         api.prevent_close();
-                        // Hide the window instead
                         settings_window_clone.hide().unwrap();
                     }
                 });
@@ -254,23 +247,19 @@ pub fn run() {
             )));
             app.manage(target_coordinator.clone());
 
-            // Queue for incoming plugin messages delivered before the notification window is ready.
             let pending_notifications: Arc<Mutex<Vec<serde_json::Value>>> =
                 Arc::new(Mutex::new(Vec::new()));
             app.manage(pending_notifications.clone());
 
-            // Debug log queue — messages emitted before the debug window opens
             app.manage(DebugLogQueue(Mutex::new(Vec::new())));
 
             app.manage(LastClipHash(Mutex::new(None)));
             app.manage(MorphEcho(Mutex::new(None)));
             app.manage(MorphNotifyQueue(Mutex::new(Vec::new())));
 
-            // Shared patterns — updated on settings change, read by the single clipboard listener
             let shared_patterns: Arc<Mutex<Vec<Regex>>> =
                 Arc::new(Mutex::new(compile_patterns(&initial_settings.regex_list)));
 
-            // Shared compiled Morph rules — recompiled on settings change.
             let shared_morph_rules: Arc<Mutex<Vec<morph::CompiledMorphRule>>> =
                 Arc::new(Mutex::new(if initial_settings.morph_enabled {
                     morph::compile_rules(&initial_settings.morph_rules)
@@ -281,7 +270,6 @@ pub fn run() {
             setup_shortcut(app.handle(), &initial_settings);
             apply_autostart(app.handle(), initial_settings.autostart);
 
-            // History coordinator — in-memory by default, optionally SQLCipher-backed on disk
             let history_coord = build_history_coordinator(app.handle(), &initial_settings.history)
                 .unwrap_or_else(|e| {
                     debug_log(
@@ -298,12 +286,10 @@ pub fn run() {
             let last_history_settings: Arc<Mutex<HistorySettings>> =
                 Arc::new(Mutex::new(initial_settings.history.clone()));
 
-            // Register the clipboard listener exactly once
             start_clipboard_pattern_monitor(app.handle(), shared_patterns.clone());
             start_history_capture(app.handle(), history_coord.clone(), shared_patterns.clone());
             start_morph_monitor(app.handle(), shared_morph_rules.clone());
 
-            // Listen for plugin events and show notification window for incoming messages
             let app_handle_events = app.handle().clone();
             app.listen("plugin-event", move |event| {
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) {
@@ -319,7 +305,6 @@ pub fn run() {
                 }
             });
 
-            // On settings change: update shortcut, patterns, and provider coordinator
             let app_handle_listener = app.handle().clone();
             let target_coordinator_listener = target_coordinator.clone();
             let shared_patterns_listener = shared_patterns.clone();
@@ -378,9 +363,6 @@ pub fn run() {
 }
 
 pub fn apply_autostart(app: &AppHandle, enabled: bool) {
-    // In dev builds the binary uses a dev-server URL and has no windows_subsystem
-    // attribute, so registering it for autostart would show a console window on
-    // boot and fail to load the frontend ("Not Found").
     if cfg!(debug_assertions) {
         debug_log(
             app,
@@ -535,7 +517,7 @@ pub fn on_history_shortcut(
         "info",
         format!("History shortcut pressed: {shortcut:?}"),
     );
-    open_history_window(app);
+    popup::open(app, popup::HISTORY);
 }
 
 pub fn on_morph_shortcut(
@@ -552,7 +534,7 @@ pub fn on_morph_shortcut(
         "info",
         format!("Morph shortcut pressed: {shortcut:?}"),
     );
-    open_morph_picker_window(app);
+    popup::open(app, popup::MORPH_PICKER);
 }
 
 pub fn on_exec_shortcut(
@@ -576,7 +558,7 @@ fn handle_exec_shortcut(app: &AppHandle) {
     let settings = match SettingsCoordinator::from_handle(app) {
         Ok(s) => s.get_settings().clone(),
         Err(_) => {
-            open_exec_picker_window(app);
+            popup::open(app, popup::EXEC_PICKER);
             return;
         }
     };
@@ -602,103 +584,7 @@ fn handle_exec_shortcut(app: &AppHandle) {
         }
     }
 
-    open_exec_picker_window(app);
-}
-
-pub fn open_exec_picker_window(app: &AppHandle) {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-    if let Some(window) = app.get_webview_window("exec-picker") {
-        show_window_fresh(&window);
-        return;
-    }
-    match WebviewWindowBuilder::new(app, "exec-picker", WebviewUrl::App("exec-picker".into()))
-        .title("Execute - clipygo")
-        .devtools(true)
-        .inner_size(560.0, 480.0)
-        .decorations(false)
-        .center()
-        .build()
-    {
-        Ok(window) => {
-            let clone = window.clone();
-            window.on_window_event(move |event| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = clone.hide();
-                }
-            });
-        }
-        Err(e) => debug_log(
-            app,
-            "app",
-            "error",
-            format!("Failed to create exec picker window: {e}"),
-        ),
-    }
-}
-
-pub fn open_morph_picker_window(app: &AppHandle) {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-    if let Some(window) = app.get_webview_window("morph-picker") {
-        show_window_fresh(&window);
-        return;
-    }
-    match WebviewWindowBuilder::new(app, "morph-picker", WebviewUrl::App("morph-picker".into()))
-        .title("Morph - clipygo")
-        .devtools(true)
-        .inner_size(560.0, 640.0)
-        .decorations(false)
-        .center()
-        .build()
-    {
-        Ok(window) => {
-            let clone = window.clone();
-            window.on_window_event(move |event| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = clone.hide();
-                }
-            });
-        }
-        Err(e) => debug_log(
-            app,
-            "app",
-            "error",
-            format!("Failed to create morph picker window: {e}"),
-        ),
-    }
-}
-
-pub fn open_history_window(app: &AppHandle) {
-    use tauri::{WebviewUrl, WebviewWindowBuilder};
-    if let Some(window) = app.get_webview_window("history") {
-        show_window_fresh(&window);
-        return;
-    }
-    match WebviewWindowBuilder::new(app, "history", WebviewUrl::App("history".into()))
-        .title("History - clipygo")
-        .devtools(true)
-        .inner_size(900.0, 640.0)
-        .decorations(false)
-        .center()
-        .build()
-    {
-        Ok(window) => {
-            let clone = window.clone();
-            window.on_window_event(move |event| {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = clone.hide();
-                }
-            });
-        }
-        Err(e) => debug_log(
-            app,
-            "app",
-            "error",
-            format!("Failed to create history window: {e}"),
-        ),
-    }
+    popup::open(app, popup::EXEC_PICKER);
 }
 
 fn start_clipboard_monitor(app: &AppHandle) {
@@ -874,8 +760,6 @@ mod tests {
         assert!(!patterns[0].is_match("https://zoom.us/j/123456"));
     }
 
-    // --- Default regex patterns ---
-
     fn default_patterns() -> Vec<regex::Regex> {
         compile_patterns(&settings::AppSettings::default().regex_list)
     }
@@ -936,14 +820,10 @@ mod tests {
 
     #[test]
     fn default_pattern_google_meet_rejects_wrong_format() {
-        // slug must be xxx-xxxx-xxx (3-4-3 lowercase)
         assert!(!matches_any("https://meet.google.com/toolong-slug"));
     }
 }
 
-/// Shows the notification window, creating it if it doesn't exist.
-/// If the window already exists (was hidden), emits the message directly to it
-/// because hidden windows don't receive global app broadcasts.
 fn show_notification_window(app: &AppHandle, data: Option<&serde_json::Value>) {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
@@ -955,7 +835,6 @@ fn show_notification_window(app: &AppHandle, data: Option<&serde_json::Value>) {
         return;
     }
 
-    // Create notification window in bottom-right corner
     match WebviewWindowBuilder::new(app, "notification", WebviewUrl::App("notification".into()))
         .title("clipygo — notification")
         .inner_size(360.0, 300.0)
@@ -967,7 +846,6 @@ fn show_notification_window(app: &AppHandle, data: Option<&serde_json::Value>) {
         .build()
     {
         Ok(window) => {
-            // Position in bottom-right before making visible to avoid top-left flash
             if let Ok(Some(monitor)) = window.current_monitor() {
                 let screen = monitor.size();
                 let scale = monitor.scale_factor();
@@ -1023,7 +901,6 @@ fn get_debug_sources(
     Ok(sources)
 }
 
-/// Registers the clipboard update listener exactly once.
 fn build_history_coordinator(
     app: &AppHandle,
     settings: &HistorySettings,
@@ -1218,7 +1095,6 @@ fn parse_png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     Some((w, h))
 }
 
-/// Patterns are read from `shared_patterns` on every event, so updates take effect immediately.
 fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<Vec<Regex>>>) {
     let app_handle = app.clone();
     app.listen(
@@ -1249,9 +1125,6 @@ fn start_clipboard_pattern_monitor(app: &AppHandle, shared_patterns: Arc<Mutex<V
     );
 }
 
-/// Built-in Morph feature: on each clipboard update, apply the first matching
-/// rule in-place (rewriting the clipboard) and pop a notification window.
-/// Rules are read from `shared_rules` on every event, so updates take effect immediately.
 fn start_morph_monitor(app: &AppHandle, shared_rules: Arc<Mutex<Vec<morph::CompiledMorphRule>>>) {
     let app_handle = app.clone();
     app.listen(
@@ -1267,7 +1140,6 @@ fn start_morph_monitor(app: &AppHandle, shared_rules: Arc<Mutex<Vec<morph::Compi
             }
             let h_in = hash_text(&text);
 
-            // Ignore the monitor event caused by our own write-back.
             if let Some(echo) = app_handle.try_state::<MorphEcho>() {
                 if let Ok(mut g) = echo.0.lock() {
                     if *g == Some(h_in) {
@@ -1315,8 +1187,6 @@ fn start_morph_monitor(app: &AppHandle, shared_rules: Arc<Mutex<Vec<morph::Compi
     );
 }
 
-/// Shows the Morph notification window (creating it if needed), styled like the
-/// incoming-message popup but fully independent of plugins.
 fn show_morph_window(app: &AppHandle, rule_name: &str, before: &str, after: &str) {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
@@ -1336,7 +1206,6 @@ fn show_morph_window(app: &AppHandle, rule_name: &str, before: &str, after: &str
         return;
     }
 
-    // First time: queue the event so the window can drain it once its JS mounts.
     if let Some(queue) = app.try_state::<MorphNotifyQueue>() {
         if let Ok(mut q) = queue.0.lock() {
             if q.len() >= 50 {
