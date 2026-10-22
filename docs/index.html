@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>clipygo — Clipboard Router</title>
-  <meta name="description" content="Clipboard monitor that watches for patterns and routes content to configured targets — instantly, with a single keypress." />
+  <title>clipygo · Clipboard Router</title>
+  <meta name="description" content="Clipboard monitor that watches for patterns and routes content to configured targets instantly, with a single keypress." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500&display=swap" rel="stylesheet" />
@@ -326,7 +326,7 @@
   <div>
     <div class="hero-badge">Open Source · Tauri · Rust</div>
     <h1>Clipboard routing,<br><span>instantly.</span></h1>
-    <p>clipygo watches your clipboard for patterns — meeting links, tickets, URLs — and routes the content to any target with a single keypress.</p>
+    <p>clipygo watches your clipboard for patterns such as meeting links, tickets and URLs, and routes the content to any target with a single keypress.</p>
     <div class="hero-actions">
       <a href="https://github.com/it-atelier-gn/clipygo/releases/latest" class="btn btn-primary">
         ↓ Download
@@ -346,7 +346,7 @@
 
 <section class="demo" aria-label="Demo video">
   <div class="demo-frame">
-    <video src="clipygo-demo.mp4" poster="clipygo-demo.jpg" controls playsinline preload="metadata" width="1920" height="1080"></video>
+    <video src="clipygo-demo.mp4?v=2.0.0" poster="clipygo-demo.jpg?v=2.0.0" controls playsinline preload="metadata" width="1920" height="1080"></video>
   </div>
   <p class="demo-credit">Music: “Happy Beats / Business Moves Vol. 1” by <a href="https://ende.app/en" rel="noopener">ende.app</a>, <a href="https://creativecommons.org/licenses/by/4.0/" rel="noopener">CC BY 4.0</a>.</p>
 </section>
@@ -359,7 +359,7 @@
     <div class="features-grid">
       <div class="feature-card">
         <h3>Pattern detection</h3>
-        <p>Regex-based clipboard monitoring triggers the popup automatically — meeting links, tickets, Code With Me URLs, and anything you configure.</p>
+        <p>Regex-based clipboard monitoring triggers the popup automatically for meeting links, tickets, Code With Me URLs and anything you configure.</p>
       </div>
       <div class="feature-card">
         <h3>Global hotkey</h3>
@@ -371,7 +371,7 @@
       </div>
       <div class="feature-card">
         <h3>Subprocess plugins</h3>
-        <p>Any executable that speaks JSON over stdin/stdout is a valid plugin — Node.js, Python, Rust, Go. Processes stay alive between requests.</p>
+        <p>Any executable that speaks JSON over stdin/stdout is a valid plugin: Node.js, Python, Rust, Go. Processes stay alive between requests.</p>
       </div>
       <div class="feature-card">
         <h3>Plugin registry</h3>
@@ -379,11 +379,11 @@
       </div>
       <div class="feature-card">
         <h3>Clipboard history</h3>
-        <p>Encrypted history of everything you copy — text and images. Open with <code>Ctrl+Shift+H</code>, search, navigate with arrows, <code>Enter</code> to copy back, <code>Ctrl+Enter</code> to resend to a target. Optional SQLite-backed disk persistence with XChaCha20-Poly1305.</p>
+        <p>Encrypted history of everything you copy, text and images. Open with <code>Ctrl+Shift+H</code>, search, navigate with arrows, <code>Enter</code> to copy back, <code>Ctrl+Enter</code> to resend to a target. Optional SQLite-backed disk persistence with XChaCha20-Poly1305.</p>
       </div>
       <div class="feature-card">
         <h3>Encrypted clipboard relay</h3>
-        <p>Share clipboard content with other users via E2E encryption. Zero-knowledge relay server — no accounts, just cryptographic keys.</p>
+        <p>Share clipboard content with other users via E2E encryption. Zero-knowledge relay server with no accounts, just cryptographic keys.</p>
       </div>
       <div class="feature-card">
         <h3>System tray &amp; autostart</h3>
@@ -402,17 +402,17 @@
       <div class="step">
         <div class="step-number">01</div>
         <h3>Copy anything</h3>
-        <p>clipygo monitors your clipboard in the background. No polling — event-driven, no CPU waste.</p>
+        <p>clipygo monitors your clipboard in the background. No polling: event-driven, no CPU waste.</p>
       </div>
       <div class="step">
         <div class="step-number">02</div>
         <h3>Popup appears</h3>
-        <p>When a configured regex matches — or you press the hotkey — the popup surfaces with your content and all available targets.</p>
+        <p>When a configured regex matches, or you press the hotkey, the popup surfaces with your content and all available targets.</p>
       </div>
       <div class="step">
         <div class="step-number">03</div>
         <h3>Pick and send</h3>
-        <p>Navigate with arrow keys, press Enter. Your plugin handles the delivery — Teams, Slack, GitHub, whatever you build.</p>
+        <p>Navigate with arrow keys, press Enter. Your plugin handles the delivery to Teams, Slack, GitHub or whatever you build.</p>
       </div>
     </div>
   </div>
@@ -491,7 +491,7 @@
 <div class="about-strip">
   <div class="about-inner">
     <p>
-      Built by <a href="http://www.georg-nelles.de" target="_blank" rel="noopener">Georg Nelles</a> —
+      Built by <a href="http://www.georg-nelles.de" target="_blank" rel="noopener">Georg Nelles</a>,
       freelance software engineer specializing in automation, modernization, and pragmatic tooling.
       clipygo is an open-source tool built for developers who move fast.
     </p>

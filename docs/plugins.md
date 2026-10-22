@@ -1,6 +1,6 @@
 # Plugin System
 
-clipygo uses a persistent subprocess model for target providers. A plugin is any executable that reads JSON requests from stdin and writes JSON responses to stdout — one JSON object per line. The process stays alive for the lifetime of the session.
+clipygo uses a persistent subprocess model for target providers. A plugin is any executable that reads JSON requests from stdin and writes JSON responses to stdout, one JSON object per line. The process stays alive for the lifetime of the session.
 
 ## Adding a plugin
 
@@ -11,7 +11,7 @@ Name:    My Plugin
 Command: node C:\plugins\my-plugin\index.js
 ```
 
-The command can be any executable or interpreter — compiled binaries, Node.js scripts, Python scripts, etc.
+The command can be any executable or interpreter: compiled binaries, Node.js scripts, Python scripts, etc.
 
 ## Protocol
 
@@ -25,7 +25,7 @@ Every request is a single line of JSON. Every response is a single line of JSON.
 | `get_config_schema` | No | JSON Schema + current values + instructions for the settings UI |
 | `set_config` | No | Apply config values saved by the user |
 
-### `get_info` — called on startup to verify the plugin
+### `get_info`: called on startup to verify the plugin
 
 ```json
 {"command":"get_info"}
@@ -36,7 +36,7 @@ Every request is a single line of JSON. Every response is a single line of JSON.
 
 The optional `link` field provides a URL shown next to the plugin name in settings (e.g. repo page, docs).
 
-### `get_targets` — returns all available targets for this plugin
+### `get_targets`: returns all available targets for this plugin
 
 ```json
 {"command":"get_targets"}
@@ -65,9 +65,9 @@ The optional `link` field provides a URL shown next to the plugin name in settin
 | `image` | Base64-encoded PNG                                                  |
 | `files` | Newline-joined absolute file paths                                  |
 
-When the clipboard offers more than one usable format (e.g. both plain text and HTML), clipygo picks the richest format each target declares support for, in priority order `files` > `html` > `image` > `text` — not a single global format for every target. A target that lists `["html", "text"]` gets HTML when the clipboard has rich text, and plain text otherwise.
+When the clipboard offers more than one usable format (e.g. both plain text and HTML), clipygo picks the richest format each target declares support for, in priority order `files` > `html` > `image` > `text`, not a single global format for every target. A target that lists `["html", "text"]` gets HTML when the clipboard has rich text, and plain text otherwise.
 
-### `send` — send clipboard content to a target
+### `send`: send clipboard content to a target
 
 ```json
 {"command":"send","target_id":"unique-target-id","content":"clipboard text here","format":"text"}
@@ -79,7 +79,7 @@ When the clipboard offers more than one usable format (e.g. both plain text and 
 {"success":false,"error":"Something went wrong"}
 ```
 
-### `get_config_schema` *(optional)* — return a JSON Schema and current values for the settings UI
+### `get_config_schema` *(optional)*: return a JSON Schema and current values for the settings UI
 
 ```json
 {"command":"get_config_schema"}
@@ -107,9 +107,9 @@ If this command is implemented, clipygo shows a **Configure** button next to the
 Supported field types: `string` (text input), `string` with `format: "password"` (password input with visibility toggle), `string` with `enum` (select), `boolean` (toggle), `array` (editable list of objects, see below).
 
 Optional field features:
-- `instructions` — plain text shown above the config fields (supports newlines)
-- `visibleIf` — conditionally show a field based on another field's value: `"visibleIf": {"field": "value"}` or `"visibleIf": {"field": ["a","b"]}` for multiple values
-- `readOnly` — display-only field that cannot be edited by the user (excluded from `set_config` values)
+- `instructions`: plain text shown above the config fields (supports newlines)
+- `visibleIf`: conditionally show a field based on another field's value: `"visibleIf": {"field": "value"}` or `"visibleIf": {"field": ["a","b"]}` for multiple values
+- `readOnly`: display-only field that cannot be edited by the user (excluded from `set_config` values)
 
 #### `array` fields
 
@@ -136,7 +136,7 @@ An `array` field renders as a list of rows, each with inline inputs for its `ite
 
 `set_config` receives the field's value as a JSON array of objects, e.g. `[{"name": "Alice", "id": "abc123"}]`.
 
-### `set_config` *(optional)* — apply configuration values saved by the user
+### `set_config` *(optional)*: apply configuration values saved by the user
 
 ```json
 {"command":"set_config","values":{"api_key":"secret","verbose":true,"mode":"fast"}}

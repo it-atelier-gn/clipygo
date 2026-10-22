@@ -25,7 +25,7 @@ It sits in your system tray, monitors the clipboard for regex matches (meeting l
 - [Node.js](https://nodejs.org/) 22.17+ with npm
 - [Tauri CLI](https://tauri.app/start/): `cargo install tauri-cli`
 - Windows 10/11 (primary target; macOS and Linux experimental)
-- [WebView2 runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) — pre-installed on Windows 11 and most Windows 10 systems; required for the portable build
+- [WebView2 runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/): pre-installed on Windows 11 and most Windows 10 systems; required for the portable build
 
 ### Build & Run
 
@@ -49,7 +49,7 @@ Everything is configured through the in-app settings window (tray icon → Setti
 
 ## Plugins
 
-clipygo is extended through plugins — any executable that speaks JSON over stdin/stdout. Plugins provide targets, handle delivery, and can push real-time events back to clipygo. See the [plugin docs](docs/plugins.md) for the full protocol reference, examples, and how to write your own.
+clipygo is extended through plugins: any executable that speaks JSON over stdin/stdout. Plugins provide targets, handle delivery, and can push real-time events back to clipygo. See the [plugin docs](docs/plugins.md) for the full protocol reference, examples, and how to write your own.
 
 ---
 
