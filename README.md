@@ -22,7 +22,7 @@ It sits in your system tray, monitors the clipboard for regex matches (meeting l
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) 1.80+
-- [Node.js](https://nodejs.org/) 18+ with npm
+- [Node.js](https://nodejs.org/) 22.17+ with npm
 - [Tauri CLI](https://tauri.app/start/): `cargo install tauri-cli`
 - Windows 10/11 (primary target; macOS and Linux experimental)
 - [WebView2 runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) — pre-installed on Windows 11 and most Windows 10 systems; required for the portable build
