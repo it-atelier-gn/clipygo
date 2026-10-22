@@ -949,7 +949,7 @@
               <div class="toggle-setting">
                 <div class="setting-info">
                   <h3>Auto-run on match</h3>
-                  <p class="text-secondary">When the hotkey is pressed and exactly one command with a (non-empty) match pattern matches the clipboard, run it directly instead of opening the picker. Commands without a pattern never auto-run — they only appear in the picker.</p>
+                  <p class="text-secondary">When the hotkey is pressed and exactly one command with a (non-empty) match pattern matches the clipboard, run it directly instead of opening the picker. Commands without a pattern never auto-run; they only appear in the picker.</p>
                 </div>
                 <div class="toggle-wrapper">
                   <input
@@ -1025,7 +1025,7 @@
                       on:input={(e) => { settings!.exec_commands[index].working_dir = e.currentTarget.value; scheduleSave(); }}
                     />
 
-                    <span class="morph-field-label">Match pattern (regex, optional — empty = always in picker, never auto-runs)</span>
+                    <span class="morph-field-label">Match pattern (regex, optional; empty means picker only, never auto-runs)</span>
                     <input
                       class="input morph-mono"
                       value={cmd.pattern}
@@ -1088,7 +1088,7 @@
                           <a href={pluginLinks[plugin.id]} target="_blank" rel="noopener" class="plugin-link" title="Open plugin page">↗</a>
                         {/if}
                         {#if pluginPathValid[plugin.id] === false}
-                          <span class="badge-warning" title="Executable not found — check the command path">⚠ not found</span>
+                          <span class="badge-warning" title="Executable not found. Check the command path.">⚠ not found</span>
                         {:else if pluginStatuses[plugin.id] && !pluginStatuses[plugin.id].healthy}
                           <span class="badge-warning" title={pluginStatuses[plugin.id].error ?? 'Plugin is in error state'}>⚠ error</span>
                         {:else if pluginStatuses[plugin.id]?.healthy}
