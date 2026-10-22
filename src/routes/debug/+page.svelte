@@ -20,7 +20,6 @@
   let autoScroll = true;
   let unlistenDebugLog: UnlistenFn;
 
-  // Per-source log buffers
   let logs: Record<string, DebugLogEntry[]> = { app: [] };
 
   let logContainer: HTMLElement;
@@ -69,7 +68,6 @@
   onMount(async () => {
     if (!browser) return;
 
-    // Fetch known plugin sources
     try {
       const result = await invoke<string[]>('get_debug_sources');
       for (const src of result) {
@@ -84,7 +82,6 @@
       console.error('Failed to get debug sources:', e);
     }
 
-    // Drain pending logs
     try {
       const pending = await invoke<DebugLogEntry[]>('get_pending_debug_logs');
       for (const entry of pending) {
@@ -94,7 +91,6 @@
       console.error('Failed to get pending debug logs:', e);
     }
 
-    // Listen for new debug log entries
     unlistenDebugLog = await listen<DebugLogEntry>('debug-log', (event) => {
       addEntry(event.payload);
     });
@@ -108,7 +104,7 @@
 
 <div class="debug-container">
   <div class="drag-strip" data-tauri-drag-region>
-    <span class="drag-label" data-tauri-drag-region>debug log</span>
+    <span class="drag-label" data-tauri-drag-region>Debug log</span>
     <div class="drag-strip-actions" data-tauri-drag-region>
       <button class="btn-strip" data-tauri-drag-region="false" on:click={clearTab}>
         Clear
@@ -163,26 +159,25 @@
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
+    background: var(--bg-primary);
   }
 
   .drag-strip {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-xs) var(--space-sm);
-    background: var(--bg-tertiary);
+    height: 36px;
+    padding: 0 var(--space-sm) 0 var(--space-lg);
     border-bottom: 1px solid var(--border-primary);
-    cursor: grab;
     user-select: none;
     flex-shrink: 0;
   }
 
   .drag-label {
-    font-family: var(--font-gaming);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-primary);
   }
 
   .drag-strip-actions {
@@ -192,104 +187,99 @@
   }
 
   .btn-strip {
+    height: 24px;
+    min-width: 24px;
+    padding: 0 var(--space-md);
     background: none;
     border: none;
+    border-radius: var(--radius-md);
     color: var(--text-muted);
-    font-family: var(--font-gaming);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 0.78rem;
     cursor: pointer;
-    padding: 2px var(--space-xs);
-    border-radius: var(--radius-sm);
-    transition: color var(--transition-normal);
+    transition: background var(--transition-fast), color var(--transition-fast);
   }
 
   .btn-strip:hover {
-    color: var(--accent-primary);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .btn-strip-active {
     color: var(--accent-primary);
   }
 
-  .btn-strip-close:hover {
-    color: var(--accent-secondary);
+  .btn-strip-close {
+    padding: 0;
   }
 
-  /* Tab bar */
   .tab-bar {
     display: flex;
-    gap: 0;
-    background: var(--bg-secondary);
-    border-bottom: 2px solid var(--border-primary);
+    gap: var(--space-xs);
+    padding: 0 var(--space-md);
+    border-bottom: 1px solid var(--border-primary);
     flex-shrink: 0;
     overflow-x: auto;
   }
 
   .tab {
+    height: 30px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    padding: var(--space-xs) var(--space-md);
-    font-family: var(--font-gaming);
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    margin-bottom: -1px;
+    padding: 0 var(--space-md);
+    font-size: 0.78rem;
     color: var(--text-muted);
     cursor: pointer;
-    transition: all var(--transition-normal);
+    transition: color var(--transition-fast), border-color var(--transition-fast);
     white-space: nowrap;
     display: flex;
     align-items: center;
-    gap: var(--space-xs);
+    gap: var(--space-sm);
   }
 
   .tab:hover {
-    color: var(--text-secondary);
-    background: var(--bg-tertiary);
+    color: var(--text-primary);
   }
 
   .tab-active {
-    color: var(--accent-primary);
+    color: var(--text-primary);
     border-bottom-color: var(--accent-primary);
   }
 
   .tab-count {
-    font-family: var(--font-mono);
-    font-size: 0.55rem;
+    font-size: 0.66rem;
+    line-height: 15px;
     color: var(--text-muted);
     background: var(--bg-tertiary);
-    padding: 1px 4px;
-    border-radius: var(--radius-sm);
+    padding: 0 5px;
+    border-radius: 8px;
   }
 
   .tab-active .tab-count {
     color: var(--accent-primary);
-    background: rgba(0, 212, 255, 0.1);
+    background: var(--accent-soft);
   }
 
-  /* Log area */
   .log-area {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space-xs);
-    background: var(--bg-primary);
+    padding: var(--space-sm);
+    background: var(--bg-secondary);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     line-height: 1.5;
   }
 
   .log-line {
     display: flex;
-    gap: var(--space-sm);
-    padding: 1px var(--space-xs);
-    border-radius: 2px;
+    gap: var(--space-md);
+    padding: 0 var(--space-sm);
+    border-radius: var(--radius-sm);
   }
 
   .log-line:hover {
-    background: var(--bg-tertiary);
+    background: var(--bg-hover);
   }
 
   .log-time {
@@ -308,11 +298,10 @@
     word-break: break-word;
   }
 
-  /* Level colors */
-  .log-error .log-level { color: var(--accent-danger); }
+  .log-error .log-level,
   .log-error .log-message { color: var(--accent-danger); }
 
-  .log-warn .log-level { color: var(--accent-warning); }
+  .log-warn .log-level,
   .log-warn .log-message { color: var(--accent-warning); }
 
   .log-info .log-level { color: var(--accent-primary); }
@@ -321,11 +310,9 @@
 
   .empty-state {
     text-align: center;
-    padding: var(--space-lg);
+    padding: var(--space-2xl);
     color: var(--text-muted);
-    font-family: var(--font-gaming);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-family: var(--font-primary);
+    font-size: 0.85rem;
   }
 </style>

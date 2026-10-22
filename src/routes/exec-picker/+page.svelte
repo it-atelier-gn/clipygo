@@ -158,7 +158,7 @@
 
 <div class="picker">
   <div class="drag-strip" data-tauri-drag-region>
-    <span class="title" data-tauri-drag-region>Execute · run a command</span>
+    <span class="title" data-tauri-drag-region>Execute</span>
     <button class="btn-close" data-tauri-drag-region="false" on:click={close}>✕</button>
   </div>
 
@@ -196,7 +196,7 @@
 
       {#if visible.length === 0}
         <div class="empty">
-          {commands.length === 0 ? 'No commands configured — add some in Settings.' : `No command matches "${query}"`}
+          {commands.length === 0 ? 'No commands yet. Add them in Settings.' : `No command matches "${query}"`}
         </div>
       {/if}
     </div>
@@ -216,148 +216,168 @@
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
-    background: var(--bg-primary, var(--bg-surface));
+    background: var(--bg-primary);
   }
 
   .drag-strip {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-xs) var(--space-sm);
-    background: var(--bg-tertiary);
+    height: 36px;
+    padding: 0 var(--space-sm) 0 var(--space-lg);
     border-bottom: 1px solid var(--border-primary);
-    cursor: grab;
     user-select: none;
     flex-shrink: 0;
   }
 
   .title {
-    font-family: var(--font-gaming);
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-secondary);
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-primary);
   }
 
   .btn-close {
+    width: 24px;
+    height: 24px;
     background: none;
     border: none;
+    border-radius: var(--radius-md);
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.8rem;
+    transition: background var(--transition-fast), color var(--transition-fast);
   }
-  .btn-close:hover { color: var(--accent-secondary); }
+
+  .btn-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
 
   .body {
     flex: 1;
     overflow-y: auto;
-    padding: var(--space-sm);
+    padding: var(--space-md) var(--space-lg);
     display: flex;
     flex-direction: column;
-    gap: var(--space-sm);
+    gap: var(--space-md);
+  }
+
+  .search {
+    width: 100%;
+    height: 30px;
+    padding: 0 var(--space-md);
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .search:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .search::placeholder { color: var(--text-muted); }
+
+  .error {
+    font-size: 0.78rem;
+    color: var(--accent-danger);
+  }
+
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 34px;
+    padding: 0 var(--space-lg);
+    border-top: 1px solid var(--border-primary);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+
+  .hint {
+    font-size: 0.72rem;
+    color: var(--text-muted);
   }
 
   .clip-line {
     display: flex;
     align-items: baseline;
-    gap: var(--space-sm);
+    gap: var(--space-md);
     overflow: hidden;
   }
 
   .clip-label {
-    font-family: var(--font-gaming);
-    font-size: 0.55rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    font-size: 0.72rem;
     color: var(--text-muted);
     flex-shrink: 0;
   }
 
   .clip-value {
     font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .search {
-    width: 100%;
-    box-sizing: border-box;
-    padding: var(--space-xs) var(--space-sm);
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    color: var(--text-primary);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-primary);
-    border-radius: var(--radius-md);
-    outline: none;
-    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
-  }
-
-  .search:focus {
-    border-color: var(--accent-primary);
-    box-shadow: var(--glow-primary);
-  }
-
-  .search::placeholder { color: var(--text-muted); }
-
   .cmd-list {
     display: flex;
     flex-direction: column;
-    gap: var(--space-xs);
+    gap: 2px;
+    margin: 0 calc(-1 * var(--space-md));
   }
 
   .cmd {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
     text-align: left;
-    padding: var(--space-xs) var(--space-sm);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-primary);
-    background: var(--bg-elevated);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    background: transparent;
+    color: inherit;
     cursor: pointer;
-    transition: all var(--transition-normal);
+    transition: background var(--transition-fast);
   }
 
-  .cmd:hover { border-color: var(--accent-primary); }
+  .cmd:hover { background: var(--bg-hover); }
 
   .cmd.highlight {
-    border-color: var(--accent-primary);
-    background: var(--bg-surface);
-    outline: 1px solid var(--accent-primary);
-    outline-offset: 1px;
+    background: var(--accent-soft);
+    border-color: var(--accent-ring);
   }
 
   .cmd-head {
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
+    gap: var(--space-md);
   }
 
   .cmd-name {
-    font-family: var(--font-gaming);
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary);
   }
 
   .cmd-match {
-    font-family: var(--font-gaming);
-    font-size: 0.5rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 0.66rem;
+    line-height: 15px;
     color: var(--accent-primary);
-    border: 1px solid var(--accent-primary);
+    background: var(--accent-soft);
     border-radius: var(--radius-sm);
-    padding: 1px 4px;
+    padding: 0 5px;
   }
 
   .cmd-path {
     font-family: var(--font-mono);
-    font-size: 0.68rem;
+    font-size: 0.7rem;
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -365,39 +385,14 @@
   }
 
   .empty {
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     color: var(--text-muted);
-    padding: var(--space-md);
+    padding: var(--space-xl);
     text-align: center;
   }
 
-  .error {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--accent-secondary);
-    padding: var(--space-xs) var(--space-sm);
-  }
-
-  .footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-sm);
-    border-top: 1px solid var(--border-primary);
-    background: var(--bg-tertiary);
-    flex-shrink: 0;
-  }
-
-  .hint {
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    color: var(--text-muted);
-  }
-
   .ran {
-    font-family: var(--font-gaming);
-    font-size: 0.65rem;
-    color: var(--accent-primary);
+    font-size: 0.72rem;
+    color: var(--accent-success);
   }
 </style>

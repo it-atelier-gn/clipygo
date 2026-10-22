@@ -253,7 +253,7 @@
 <div class="app" data-tauri-drag-region>
   <header class="header" data-tauri-drag-region>
     <div class="header-content flex justify-between items-center" data-tauri-drag-region>
-      <h1 class="h2 title-shimmer" data-tauri-drag-region>📋 clipygo</h1>
+      <h1 class="app-title" data-tauri-drag-region>clipygo</h1>
       <div class="header-actions flex gap-sm">
         <button
           class="btn btn-secondary btn-sm"
@@ -261,10 +261,11 @@
           disabled={loadingTargets}
         >
           <span class="icon" class:spinning={loadingTargets}>↻</span>
-          REFRESH
+          Refresh
         </button>
         <button
-          class="btn btn-danger btn-sm close-btn-aligned"
+          class="btn btn-ghost btn-icon"
+          aria-label="Hide"
           on:click={() => getCurrentWebviewWindow().hide()}
         >
           ✕
@@ -291,7 +292,7 @@
     <div class="transfer-layout" data-tauri-drag-region>
       <section class="card clipboard-section" data-tauri-drag-region>
         <header class="card-header">
-          <h2 class="h4 clipboard-header">📄 Clipboard Content</h2>
+          <h2 class="h4">Clipboard</h2>
           {#if clipboardFiles.length}
             <span class="badge badge-primary" data-tauri-drag-region>{clipboardFiles.length} {clipboardFiles.length === 1 ? 'file' : 'files'}</span>
           {:else if clipboardContent}
@@ -341,7 +342,7 @@
 
       <section class="card targets-section" data-tauri-drag-region>
         <header class="card-header" data-tauri-drag-region>
-          <h2 class="h4" data-tauri-drag-region>🎯 Targets</h2>
+          <h2 class="h4" data-tauri-drag-region>Targets</h2>
           {#if targets.length > 0 && clipboardFormat !== null}
             <span class="badge badge-success" data-tauri-drag-region>{compatibleCount}/{targets.length} compatible</span>
           {:else if targets.length > 0}
@@ -387,7 +388,7 @@
                     <div class="target-badges">
                       <span class="badge badge-provider">{target.provider}</span>
                       {#if !compatible}
-                        <span class="badge badge-format-hint">{target.formats.join(' · ').toUpperCase()} ONLY</span>
+                        <span class="badge badge-format-hint">{target.formats.join(' · ')} only</span>
                       {/if}
                     </div>
                   </div>
@@ -407,7 +408,7 @@
           {:else}
             <div class="empty-state compact" data-tauri-drag-region>
               <div class="empty-icon" data-tauri-drag-region>🎯</div>
-              <h3 class="h6" data-tauri-drag-region>No Targets</h3>
+              <h3 class="h6" data-tauri-drag-region>No targets</h3>
               <p class="text-secondary" data-tauri-drag-region>Enable providers in settings</p>
               <button 
                 class="btn btn-primary btn-xs" 
@@ -425,7 +426,7 @@
 
   <footer class="footer" data-tauri-drag-region>
     <div class="footer-content text-center" data-tauri-drag-region>
-      <span class="footer-hint text-muted" data-tauri-drag-region>Use <kbd class="key" data-tauri-drag-region>↑↓</kbd> to select • <kbd class="key" data-tauri-drag-region>ENTER</kbd> to send • <kbd class="key" data-tauri-drag-region>ESC</kbd> to hide</span>
+      <span class="footer-hint text-muted" data-tauri-drag-region><kbd class="key" data-tauri-drag-region>↑↓</kbd> select · <kbd class="key" data-tauri-drag-region>Enter</kbd> send · <kbd class="key" data-tauri-drag-region>Esc</kbd> hide</span>
     </div>
   </footer>
 </div>
@@ -434,18 +435,15 @@
   .plugin-errors {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-xs);
-    padding: var(--space-xs) var(--space-md);
-    background: rgba(255, 80, 80, 0.1);
-    border-bottom: 1px solid rgba(255, 80, 80, 0.3);
+    gap: var(--space-sm) var(--space-md);
+    padding: var(--space-sm) var(--space-lg);
+    background: color-mix(in srgb, var(--accent-danger) 8%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--accent-danger) 25%, transparent);
   }
 
   .plugin-error-item {
-    font-size: 0.7rem;
-    font-family: var(--font-gaming);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #ff5050;
+    font-size: 0.75rem;
+    color: var(--accent-danger);
     cursor: default;
   }
 
@@ -469,7 +467,7 @@
   .targets-section {
     display: flex;
     flex-direction: column;
-    min-height: 300px;
+    min-height: 240px;
   }
 
   .clipboard-section .card-body,
@@ -481,7 +479,8 @@
   }
 
   .card-header {
-    padding: var(--space-sm) var(--space-md);
+    height: 34px;
+    padding: 0 var(--space-lg);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -490,25 +489,26 @@
 
   .card-header h2 {
     margin: 0;
-    font-size: 1rem;
+    font-family: var(--font-primary);
+    font-size: 0.8rem;
     font-weight: 600;
+    color: var(--text-secondary);
   }
 
   .card-body {
     padding: var(--space-md);
   }
 
-  /* Header Actions */
   .header-actions {
     display: flex;
     gap: var(--space-sm);
   }
 
   .icon.spinning {
-    animation: spin 1s linear infinite;
+    display: inline-block;
+    animation: spin 0.8s linear infinite;
   }
 
-  /* Transfer Arrow */
   .transfer-arrow {
     display: flex;
     align-items: center;
@@ -516,67 +516,61 @@
   }
 
   .arrow-container {
-    width: 40px;
-    height: 40px;
+    width: 26px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
-    border: 2px solid var(--border-primary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-primary);
     border-radius: 50%;
-    box-shadow: var(--shadow-md);
   }
 
   .arrow {
-    font-size: 1.5rem;
+    font-size: 0.9rem;
     color: var(--accent-primary);
-    font-family: var(--font-gaming);
-    text-shadow: 0 0 10px var(--accent-primary);
   }
 
-  /* Clipboard Content */
   .clipboard-content {
-    background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
-    border: 2px solid var(--border-accent);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
     border-radius: var(--radius-md);
-    padding: var(--space-md);
+    padding: var(--space-md) var(--space-lg);
     font-family: var(--font-mono);
-    font-size: 0.8rem;
-    line-height: 1.4;
+    font-size: 0.75rem;
+    line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
     flex: 1;
     overflow-y: auto;
-    position: relative;
-    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .clipboard-files {
-    background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
-    border: 2px solid var(--border-accent);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
     border-radius: var(--radius-md);
     padding: var(--space-sm);
     flex: 1;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+    gap: 1px;
   }
 
   .file-row {
     display: flex;
     align-items: center;
-    gap: var(--space-xs);
-    padding: 4px 6px;
+    gap: var(--space-sm);
+    min-height: 24px;
+    padding: 0 var(--space-sm);
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
   }
 
   .file-row:hover {
-    background: var(--bg-tertiary);
+    background: var(--bg-hover);
   }
 
   .file-name {
@@ -586,14 +580,14 @@
   }
 
   .clipboard-image {
-    border: 2px solid var(--border-accent);
+    border: 1px solid var(--border-primary);
     border-radius: var(--radius-md);
     overflow: hidden;
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--bg-tertiary);
+    background: var(--bg-secondary);
   }
 
   .clipboard-image img {
@@ -603,21 +597,9 @@
     display: block;
   }
 
-  .clipboard-content::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 3px;
-    height: 100%;
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-    border-radius: 2px 0 0 2px;
-  }
-
-  /* Targets */
   .targets-grid {
     display: grid;
-    gap: var(--space-sm);
+    gap: 2px;
     align-content: start;
     flex: 1;
     overflow-y: auto;
@@ -627,63 +609,29 @@
     display: flex;
     align-items: center;
     gap: var(--space-md);
-    padding: var(--space-md);
-    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
-    border: 1px solid var(--border-primary);
+    padding: var(--space-sm) var(--space-md);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
     cursor: pointer;
     text-align: left;
-    transition: all var(--transition-normal);
+    transition: background var(--transition-fast), border-color var(--transition-fast);
     width: 100%;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .target-card.compact {
-    padding: var(--space-sm) var(--space-md);
-  }
-
-  .target-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 3px;
-    height: 100%;
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-    opacity: 0;
-    transition: opacity var(--transition-normal);
+    color: inherit;
   }
 
   .target-card:hover:not(:disabled) {
-    border-color: var(--accent-primary);
-    box-shadow: var(--shadow-lg), var(--glow-primary);
-    transform: translateY(-1px);
-  }
-
-  .target-card:hover:not(:disabled)::before {
-    opacity: 1;
+    background: var(--bg-hover);
   }
 
   .target-card.selected {
-    border-color: var(--accent-primary);
-    box-shadow: var(--shadow-md), var(--glow-primary);
-    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), var(--bg-surface));
-  }
-
-  .target-card.selected::before {
-    opacity: 1;
+    background: var(--accent-soft);
+    border-color: var(--accent-ring);
   }
 
   .target-card.sending {
+    background: var(--accent-soft);
     border-color: var(--accent-primary);
-    background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), var(--bg-surface));
-    box-shadow: var(--glow-primary);
-  }
-
-  .target-card.sending::before {
-    opacity: 1;
-    animation: pulse 2s infinite;
   }
 
   .target-card.disabled {
@@ -695,47 +643,38 @@
   }
 
   .target-card.unsupported {
-    filter: grayscale(0.8);
     opacity: 0.45;
     cursor: not-allowed;
   }
 
   .target-card.unsupported:hover {
-    border-color: var(--border-primary);
-    box-shadow: none;
-    transform: none;
-  }
-
-  .target-card.unsupported:hover::before {
-    opacity: 0;
+    background: transparent;
   }
 
   .badge-format-hint {
-    background: rgba(255, 255, 255, 0.05);
+    background: transparent;
     color: var(--text-muted);
-    border: 1px solid var(--border-secondary);
+    border: 1px solid var(--border-primary);
   }
 
   .incompatible-icon {
-    font-size: 1.1rem;
+    font-size: 0.9rem;
     color: var(--text-muted);
-    opacity: 0.6;
   }
 
   .target-avatar {
     position: relative;
-    width: 40px;
-    height: 40px;
+    width: 32px;
+    height: 32px;
     border-radius: var(--radius-md);
     overflow: hidden;
     background: var(--bg-tertiary);
-    border: 1px solid var(--border-primary);
-    box-shadow: var(--shadow-sm);
+    flex-shrink: 0;
   }
 
   .target-avatar.small {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
   }
 
   .target-avatar img {
@@ -746,18 +685,14 @@
 
   .avatar-fallback {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-purple));
-    color: var(--text-primary);
-    font-weight: 700;
-    font-size: 0.9rem;
-    font-family: var(--font-gaming);
+    background: var(--accent-primary);
+    color: var(--on-accent);
+    font-weight: 600;
+    font-size: 0.8rem;
   }
 
   .target-info {
@@ -766,19 +701,23 @@
   }
 
   .target-title {
-    margin: 0 0 2px 0;
-    font-family: var(--font-gaming);
-    font-size: 0.9rem;
+    margin: 0;
+    font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .target-description {
-    margin: 0 0 var(--space-xs) 0;
+    margin: 0 0 2px 0;
     font-size: 0.75rem;
     line-height: 1.3;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .target-badges {
@@ -791,56 +730,47 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 20px;
+    height: 20px;
   }
 
   .send-arrow {
-    font-size: 1.2rem;
+    font-size: 0.9rem;
     color: var(--text-muted);
-    transition: all var(--transition-normal);
-    font-family: var(--font-gaming);
+    transition: transform var(--transition-fast), color var(--transition-fast);
   }
 
   .target-card:hover .send-arrow,
   .target-card.selected .send-arrow {
     transform: translateX(2px);
     color: var(--accent-primary);
-    text-shadow: 0 0 8px var(--accent-primary);
   }
 
-  /* Badges */
   .badge {
     display: inline-flex;
     align-items: center;
-    padding: 2px var(--space-sm);
+    height: 16px;
+    padding: 0 6px;
     border-radius: var(--radius-sm);
-    font-size: 0.65rem;
-    font-weight: 600;
-    font-family: var(--font-gaming);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 0.68rem;
+    font-weight: 500;
   }
 
   .badge-primary {
-    background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 212, 255, 0.1));
+    background: var(--accent-soft);
     color: var(--accent-primary);
-    border: 1px solid var(--accent-primary);
   }
 
   .badge-success {
-    background: linear-gradient(135deg, rgba(0, 255, 136, 0.2), rgba(0, 255, 136, 0.1));
+    background: color-mix(in srgb, var(--accent-success) 12%, transparent);
     color: var(--accent-success);
-    border: 1px solid var(--accent-success);
   }
 
   .badge-provider {
-    background: linear-gradient(135deg, rgba(255, 107, 53, 0.2), rgba(255, 107, 53, 0.1));
-    color: var(--accent-secondary);
-    border: 1px solid var(--accent-secondary);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
   }
 
-  /* States */
   .empty-state {
     text-align: center;
     padding: var(--space-xl);
@@ -851,21 +781,20 @@
   }
 
   .empty-icon {
-    font-size: 2.5rem;
+    font-size: 1.5rem;
     margin-bottom: var(--space-md);
-    opacity: 0.6;
+    opacity: 0.5;
   }
 
   .empty-state h3 {
-    margin-bottom: var(--space-sm);
-    font-family: var(--font-gaming);
+    margin-bottom: var(--space-xs);
     color: var(--text-primary);
-    font-size: 0.9rem;
+    font-size: 0.95rem;
   }
 
   .empty-state p {
-    margin-bottom: var(--space-sm);
-    color: var(--text-secondary);
+    margin-bottom: var(--space-md);
+    color: var(--text-muted);
     font-size: 0.8rem;
   }
 
@@ -884,14 +813,16 @@
 
   .loading-state span {
     font-size: 0.8rem;
-    color: var(--text-secondary);
+    color: var(--text-muted);
   }
 
-  /* Footer */
   .footer {
-    padding: var(--space-sm) var(--space-md);
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border-top: 1px solid var(--border-primary);
-    background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+    background: var(--bg-secondary);
   }
 
   .footer-content {
@@ -901,95 +832,45 @@
   }
 
   .footer-hint {
-    font-size: 0.7rem;
-    font-family: var(--font-gaming);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
+    font-size: 0.72rem;
   }
 
   .key {
-    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
+    display: inline-block;
+    min-width: 18px;
+    padding: 0 4px;
+    background: var(--bg-surface);
     border: 1px solid var(--border-secondary);
+    border-bottom-width: 2px;
     border-radius: var(--radius-sm);
-    padding: 2px var(--space-xs);
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     font-family: var(--font-mono);
-    font-weight: 600;
-    color: var(--accent-primary);
-    text-shadow: 0 0 5px var(--accent-primary);
-    box-shadow: var(--shadow-sm);
+    line-height: 14px;
+    text-align: center;
+    color: var(--text-secondary);
   }
 
-  /* Button sizes */
   .btn-xs {
-    padding: var(--space-xs) var(--space-sm);
-    font-size: 0.7rem;
-  }
-
-  /* Spinner sizes */
-  .spinner {
-    width: 24px;
-    height: 24px;
-    border: 2px solid var(--border-primary);
-    border-top: 2px solid var(--accent-primary);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  .spinner.small {
-    width: 20px;
-    height: 20px;
+    height: 22px;
+    padding: 0 var(--space-md);
+    font-size: 0.75rem;
   }
 
   .spinner.micro {
-    width: 16px;
-    height: 16px;
-    border-width: 1px;
+    width: 12px;
+    height: 12px;
+    border-width: 1.5px;
   }
 
-  /* Title shimmer */
-  .title-shimmer {
-    background: linear-gradient(
-      90deg,
-      var(--accent-primary) 20%,
-      #ffffff 50%,
-      var(--accent-primary) 80%
-    );
-    background-size: 200% auto;
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    animation: shimmer 3s linear infinite;
+  .app-title {
+    font-family: var(--font-serif);
+    font-size: 1.05rem;
+    font-weight: 500;
+    margin: 0;
   }
 
-  @keyframes shimmer {
-    0%   { background-position: 200% center; }
-    100% { background-position: -200% center; }
-  }
-
-  /* Animations */
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  /* Header height reduction */
   .header-content {
-    padding: var(--space-md) 0;
-  }
-
-  /* Align close button with target list */
-  .close-btn-aligned {
-    margin-right: var(--space-md);
-  }
-
-  /* Align clipboard icon with content box */
-  .clipboard-header {
-    margin-left: calc(3px + var(--space-md));
+    height: 38px;
+    padding: 0 var(--space-md) 0 var(--space-lg);
   }
 </style>

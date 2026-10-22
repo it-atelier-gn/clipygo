@@ -97,13 +97,10 @@
   onMount(async () => {
     if (!browser) return;
 
-    // Direct delivery: Rust emits this globally when the window already exists.
-    // Uses global listen (not window-scoped) so it receives broadcasts from app.emit().
     unlistenDirectMessage = await listen<IncomingMessage>('notification-message', (event) => {
       addNotification(event.payload);
     });
 
-    // Drain the queue for messages that arrived before this window's JS was ready (first load only).
     const queued = await invoke<IncomingMessage[]>('get_pending_notifications');
     for (const msg of queued) {
       addNotification(msg);
@@ -179,26 +176,24 @@
     flex-direction: column;
     max-height: 100vh;
     overflow: hidden;
+    background: var(--bg-primary);
   }
 
   .drag-strip {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--space-xs) var(--space-sm);
-    background: var(--bg-tertiary);
+    height: 28px;
+    padding: 0 var(--space-xs) 0 var(--space-md);
     border-bottom: 1px solid var(--border-primary);
-    cursor: grab;
     user-select: none;
     flex-shrink: 0;
   }
 
   .drag-label {
-    font-family: var(--font-gaming);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
+    font-family: var(--font-serif);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
   }
 
   .drag-strip-actions {
@@ -208,25 +203,21 @@
   }
 
   .btn-strip {
+    height: 22px;
+    min-width: 22px;
+    padding: 0 var(--space-sm);
     background: none;
     border: none;
-    color: var(--text-muted);
-    font-family: var(--font-gaming);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    cursor: pointer;
-    padding: 2px var(--space-xs);
     border-radius: var(--radius-sm);
-    transition: color var(--transition-normal);
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
   }
 
   .btn-strip:hover {
-    color: var(--accent-primary);
-  }
-
-  .btn-strip-close:hover {
-    color: var(--accent-secondary);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .notifications-list {
@@ -239,129 +230,106 @@
   }
 
   .notification-card {
-    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-surface));
-    border: 1px solid var(--border-accent);
-    border-radius: var(--radius-md);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-lg);
     overflow: hidden;
-    position: relative;
-    box-shadow: var(--shadow-lg);
-  }
-
-  .notification-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 3px;
-    height: 100%;
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    box-shadow: var(--shadow-md);
   }
 
   .notification-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--space-sm) var(--space-md);
-    padding-left: calc(3px + var(--space-md));
-    border-bottom: 1px solid var(--border-primary);
+    padding: var(--space-md) var(--space-md) 0;
   }
 
-  .sender {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-  }
+  .sender { display: flex; align-items: center; gap: var(--space-md); min-width: 0; }
 
   .sender-avatar {
-    width: 24px;
-    height: 24px;
-    border-radius: var(--radius-sm);
-    background: linear-gradient(135deg, var(--accent-primary), var(--accent-purple));
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--accent-primary);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: var(--font-gaming);
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: var(--text-primary);
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--on-accent);
   }
 
   .sender-name {
-    font-family: var(--font-gaming);
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     font-weight: 600;
     color: var(--text-primary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .timestamp {
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   .notification-body {
     padding: var(--space-sm) var(--space-md);
-    padding-left: calc(3px + var(--space-md));
   }
 
   .content-preview {
-    margin: 0;
+    margin: 0 0 var(--space-sm);
     font-family: var(--font-mono);
     font-size: 0.75rem;
-    line-height: 1.4;
-    color: var(--text-secondary);
+    line-height: 1.45;
+    color: var(--text-primary);
     white-space: pre-wrap;
     word-break: break-word;
   }
 
+  .content-preview:last-child { margin-bottom: 0; }
+
   .notification-actions {
     display: flex;
-    gap: var(--space-xs);
-    padding: var(--space-xs) var(--space-md);
-    padding-left: calc(3px + var(--space-md));
-    border-top: 1px solid var(--border-primary);
+    gap: var(--space-sm);
+    padding: 0 var(--space-md) var(--space-md);
   }
 
   .btn-action {
-    font-family: var(--font-gaming);
-    font-size: 0.65rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: var(--space-xs) var(--space-sm);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-primary);
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
+    height: 22px;
+    padding: 0 var(--space-md);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-secondary);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: 0.75rem;
     cursor: pointer;
-    transition: all var(--transition-normal);
+    transition: background var(--transition-fast);
   }
 
-  .btn-copy:hover {
+  .btn-action:hover { background: var(--bg-hover); }
+
+  .btn-copy {
+    background: var(--accent-primary);
     border-color: var(--accent-primary);
-    color: var(--accent-primary);
-    box-shadow: var(--glow-primary);
+    color: var(--on-accent);
   }
 
-  .btn-open:hover {
-    border-color: var(--accent-purple, var(--accent-primary));
-    color: var(--accent-purple, var(--accent-primary));
-  }
+  .btn-copy:hover { background: var(--accent-primary-dark); }
 
-  .btn-dismiss:hover {
-    border-color: var(--accent-secondary);
-    color: var(--accent-secondary);
+  .btn-dismiss {
+    border-color: transparent;
+    background: transparent;
+    color: var(--text-muted);
+    margin-left: auto;
   }
 
   .empty-state {
     text-align: center;
     padding: var(--space-lg);
     color: var(--text-muted);
-    font-family: var(--font-gaming);
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 0.8rem;
   }
 </style>
